@@ -1,0 +1,3 @@
+[submodule "external/RAFT-Stereo"]
+	path = external/RAFT-Stereo
+	url = https://github.com/princeton-vl/RAFT-Stereo.git
