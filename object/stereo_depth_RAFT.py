@@ -12,7 +12,25 @@ import torch.nn as nn
 import argparse
 import matplotlib.pyplot as plt
 from PIL import Image
+from core.utils.utils import InputPadder
 from core.raft_stereo import RAFTStereo
+
+# Load your input image using OpenCV and convert it to RGB
+checkpoint = '/home/roman/Rainbow/camera/models/raft/raftstereo-sceneflow.pth'
+path = '/home/roman/Downloads/fpv_datasets/outdoor_forward_1_snapdragon_with_gt/img/'
+mask = cv2.imread('/home/roman/Downloads/fpv_datasets/mask.png', cv2.IMREAD_GRAYSCALE).astype(np.uint8) == 0
+
+#0-120
+# left_file = 'image_0_1489.png'
+# right_file = 'image_1_1489.png'
+
+#0-300
+left_file = 'image_0_2148.png'
+right_file = 'image_1_2148.png'
+
+# disp 0-400
+# left_file = 'image_0_2375.png'
+# right_file = 'image_1_2375.png'
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DEVICE = 'cuda'
@@ -38,111 +56,55 @@ args = argparse.Namespace(
     mixed_precision=False  # add if the code uses this flag
 )
 
-'''
-#model = RAFTStereo(args)
 model = torch.nn.DataParallel(RAFTStereo(args), device_ids=[0])
-#checkpoint = torch.load("/home/roman/Rainbow/camera/models/raft/raftstereo-middlebury.pth", map_location=device)
-#model.load_state_dict(checkpoint["state_dict"])
-checkpoint = torch.load("/home/roman/Rainbow/camera/models/raft/raftstereo-middlebury.pth")
-if not checkpoint:
-    raise RuntimeError('no checkpoint')
+model.load_state_dict(torch.load(checkpoint))
 
 model = model.module
-model.load_state_dict(checkpoint)
-
-'''
-
-# Wrap the model in DataParallel (this will make the model's state dict keys be prefixed with "module.")
-model = nn.DataParallel(RAFTStereo(args), device_ids=[0])
-# checkpoint = torch.load("/home/roman/Rainbow/camera/models/raft/raftstereo-middlebury.pth", map_location=device)
-# model.load_state_dict(checkpoint["state_dict"])  # or checkpoint, depending on your checkpoint structure
-
-# Load the checkpoint, setting weights_only=True per the recommendation.
-checkpoint = torch.load(
-    "/home/roman/Rainbow/camera/models/raft/raftstereo-middlebury.pth",
-    map_location=device,
-    weights_only=True
-)
-
-# If the checkpoint is a dictionary with a "state_dict" key, use that;
-# otherwise, assume the checkpoint itself is the state dictionary.
-if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
-    state_dict = checkpoint["state_dict"]
-else:
-    state_dict = checkpoint
-
-model.load_state_dict(state_dict)
-
-
-
-model = model.module  # optionally, extract the underlying model if you don't need DataParallel further
-
-
-
-model.to(device)
+model.to(DEVICE)
 model.eval()
 
 
-
-# Load your stereo images (for example, right image)
-# Load your input image using OpenCV and convert it to RGB
-path = '/home/roman/Downloads/fpv_datasets/outdoor_forward_1_snapdragon_with_gt/img/'
-# left_file = 'image_0_1489.png'
-# right_file = 'image_1_1489.png'
-
-left_file = 'image_0_2148.png'
-right_file = 'image_1_2148.png'
-
-# left_file = 'image_0_2375.png'
-# right_file = 'image_1_2375.png'
-
-left_img = cv2.imread(path+left_file)
-right_img = cv2.imread(path+right_file)
-left_img = cv2.cvtColor(left_img, cv2.COLOR_BGR2RGB)
-right_img = cv2.cvtColor(right_img, cv2.COLOR_BGR2RGB)
-
-# Preprocess images to tensor (you might need to adjust normalization/resizing)
-def preprocess(img):
-    img = cv2.resize(img, (640,480))
-    img = img.astype(np.float32) / 255.0
-    tensor = torch.from_numpy(img).permute(2,0,1).unsqueeze(0).to(device)
-    return tensor
-
-left_tensor = preprocess(left_img)
-right_tensor = preprocess(right_img)
-
 with torch.no_grad():
-    output = model(left_tensor, right_tensor, iters=32, test_mode=True)
-    disparity = output[-1] if isinstance(output, (list, tuple)) else output
+    image1 = load_image(path+left_file)
+    image2 = load_image(path+right_file)
 
-disparity_np = disparity.squeeze().cpu().numpy()
+    padder = InputPadder(image1.shape, divis_by=32)
+    image1, image2 = padder.pad(image1, image2)
+
+    _, flow_up = model(image1, image2, iters=32, test_mode=True)
+    flow_up = padder.unpad(flow_up).squeeze()
+
+disparity_np = -flow_up.cpu().numpy().squeeze()
+#disparity_np = np.clip(disparity_np, 0.0, 120)
 
 # Compute metric depth using calibration info: depth = f*B / disparity
 f = 277.48  # example focal length in pixels
 B = 0.07919  # example baseline in meters
 valid = disparity_np > 1e-6
 depth_metric = np.zeros_like(disparity_np, dtype=np.float32)
-depth_metric[valid] = (f * B) / disparity_np[valid]
+#depth_metric[valid] = (f * B) / abs(disparity_np[valid])
+depth_metric = (f * B) / abs(disparity_np)
+depth_metric = np.clip(depth_metric, 0.000, 40)
 
 # Create a 2x2 plot:
 # First row: left and right images.
 # Second row: disparity map and metric depth map.
 fig, axs = plt.subplots(2, 2, figsize=(12, 10))
 
-axs[0, 0].imshow(left_img)
+axs[0, 0].imshow(cv2.imread(path + left_file, cv2.IMREAD_GRAYSCALE), cmap='gray')
 axs[0, 0].set_title("Left Image: " + left_file)
 axs[0, 0].axis("off")
 
-axs[0, 1].imshow(right_img)
+axs[0, 1].imshow(cv2.imread(path + right_file, cv2.IMREAD_GRAYSCALE), cmap='gray')
 axs[0, 1].set_title("Right Image: " + right_file)
 axs[0, 1].axis("off")
 
-im_disp = axs[1, 0].imshow(disparity_np, cmap="plasma")
+im_disp = axs[1, 0].imshow(np.where(mask, disparity_np, np.nan), cmap="jet")
 axs[1, 0].set_title("Disparity Map")
 axs[1, 0].axis("off")
 fig.colorbar(im_disp, ax=axs[1, 0], fraction=0.046, pad=0.04)
 
-im_depth = axs[1, 1].imshow(depth_metric, cmap="inferno")
+im_depth = axs[1, 1].imshow(np.where(mask, depth_metric, np.nan), cmap="inferno")
 axs[1, 1].set_title("Metric Depth Map")
 axs[1, 1].axis("off")
 fig.colorbar(im_depth, ax=axs[1, 1], fraction=0.046, pad=0.04)
