@@ -1,0 +1,18 @@
+{
+  "restore_ckpt": "/home/roman/Rainbow/camera/models/raft/raftstereo-sceneflow.pth",
+  "save_numpy": false,
+  "left_imgs": "/home/roman/Downloads/fpv_datasets/outdoor_forward_1_snapdragon_with_gt/img/image_0_2148.png",
+  "right_imgs": "/home/roman/Downloads/fpv_datasets/outdoor_forward_1_snapdragon_with_gt/img/image_1_2148.png",
+  "output_directory": "demo_output",
+  "mixed_precision": false,
+  "valid_iters": 32,
+  "hidden_dims": [128, 128, 128],
+  "corr_implementation": "reg",
+  "shared_backbone": false,
+  "corr_levels": 4,
+  "corr_radius": 4,
+  "n_downsample": 2,
+  "context_norm": "batch",
+  "slow_fast_gru": false,
+  "n_gru_layers": 3
+}

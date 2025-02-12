@@ -7,11 +7,11 @@ path = '/home/roman/Downloads/fpv_datasets/outdoor_forward_1_snapdragon_with_gt/
 # left_file = 'image_0_1489.png'
 # right_file = 'image_1_1489.png'
 
-# left_file = 'image_0_2148.png'
-# right_file = 'image_1_2148.png'
+left_file = 'image_0_2148.png'
+right_file = 'image_1_2148.png'
 
-left_file = 'image_0_2375.png'
-right_file = 'image_1_2375.png'
+# left_file = 'image_0_2375.png'
+# right_file = 'image_1_2375.png'
 
 
 
@@ -26,7 +26,7 @@ if img_left is None or img_right is None:
 
 # Compute disparity using StereoBM (you can also try StereoSGBM)
 # numDisparities = 48   # must be divisible by 16
-# blockSize = 11
+# blockSize = 15
 # stereo = cv2.StereoBM_create(numDisparities=numDisparities, blockSize=blockSize)
 
 # min_disp = 0
@@ -46,14 +46,14 @@ if img_left is None or img_right is None:
 
 stereo = cv2.StereoSGBM_create(
     minDisparity=0,
-    numDisparities=128,  # try increasing this if needed
-    blockSize=5,
+    numDisparities=16,  # try increasing this if needed
+    blockSize=11,
     P1=8 * 1 * 5**2,
     P2=32 * 1 * 5**2,
     disp12MaxDiff=1,
-    uniquenessRatio=15,
+    uniquenessRatio=1,
     speckleWindowSize=100,
-    speckleRange=32,
+    speckleRange=16,
     preFilterCap=63,
     mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY
 )
