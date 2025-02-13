@@ -5,9 +5,11 @@ https://github.com/princeton-vl/RAFT-Stereo
 import sys
 sys.path.append("../external/RAFT-Stereo")
 
+import os
 import torch
 import cv2
 import numpy as np
+import pandas as pd
 import torch.nn as nn
 import argparse
 import matplotlib.pyplot as plt
@@ -15,6 +17,10 @@ from PIL import Image
 from abc import ABC, abstractmethod
 from core.utils.utils import InputPadder
 from core.raft_stereo import RAFTStereo
+
+print("CUDA Available:", torch.cuda.is_available())
+print("Number of GPUs:", torch.cuda.device_count())
+print("Current Device:", torch.cuda.current_device() if torch.cuda.is_available() else "CPU")
 
 class AbstractDisparitySolver(ABC):
 
@@ -98,53 +104,74 @@ class DepthSimple(AbstractDepthSolver):
         depth_metric = np.clip(depth_metric, 0.000, 40)
         return disparity_np, depth_metric
 
-
-
-
+"""
+here we go
+"""
 checkpoint = '/home/roman/Rainbow/camera/models/raft/raftstereo-sceneflow.pth'
-path = '/home/roman/Downloads/fpv_datasets/outdoor_forward_1_snapdragon_with_gt/img/'
-mask = cv2.imread('/home/roman/Downloads/fpv_datasets/mask.png', cv2.IMREAD_GRAYSCALE).astype(np.uint8) == 0
-
-#0-120
-# left_file = 'image_0_1489.png'
-# right_file = 'image_1_1489.png'
-
-#0-300
-left_file = 'image_0_2148.png'
-right_file = 'image_1_2148.png'
-
-# disp 0-400
-# left_file = 'image_0_2375.png'
-# right_file = 'image_1_2375.png'
-
-
 disparity_solver = DisparityRAFT()
 depth_solver = DepthSimple(277.48, 0.07919, disparity_solver)
-disparity_np, depth_metric = depth_solver.depth(path + left_file, path + right_file)
 
 
-# Create a 2x2 plot:
-# First row: left and right images.
-# Second row: disparity map and metric depth map.
-fig, axs = plt.subplots(2, 2, figsize=(12, 10))
+single_frame = False
+path = '/home/roman/Downloads/fpv_datasets/outdoor_forward_1_snapdragon_with_gt/'
+mask = cv2.imread('/home/roman/Downloads/fpv_datasets/mask.png', cv2.IMREAD_GRAYSCALE).astype(np.uint8) == 0
 
-axs[0, 0].imshow(cv2.imread(path + left_file, cv2.IMREAD_GRAYSCALE), cmap='gray')
-axs[0, 0].set_title("Left Image: " + left_file)
-axs[0, 0].axis("off")
+if single_frame:
+    #img_idx = 1489
+    img_idx = 2148
+    #img_idx = 2375
 
-axs[0, 1].imshow(cv2.imread(path + right_file, cv2.IMREAD_GRAYSCALE), cmap='gray')
-axs[0, 1].set_title("Right Image: " + right_file)
-axs[0, 1].axis("off")
+    left_file = 'img/image_0_'+str(img_idx)+'.png'
+    right_file = 'img/image_1_'+str(img_idx)+'.png'
 
-im_disp = axs[1, 0].imshow(np.where(mask, disparity_np, np.nan), cmap="jet")
-axs[1, 0].set_title("Disparity Map")
-axs[1, 0].axis("off")
-fig.colorbar(im_disp, ax=axs[1, 0], fraction=0.046, pad=0.04)
+    disparity_np, depth_metric = depth_solver.depth(path + left_file, path + right_file)
 
-im_depth = axs[1, 1].imshow(np.where(mask, depth_metric, np.nan), cmap="inferno")
-axs[1, 1].set_title("Metric Depth Map")
-axs[1, 1].axis("off")
-fig.colorbar(im_depth, ax=axs[1, 1], fraction=0.046, pad=0.04)
+    # Create a 2x2 plot:
+    # First row: left and right images.
+    # Second row: disparity map and metric depth map.
+    fig, axs = plt.subplots(2, 2, figsize=(12, 10))
 
-plt.tight_layout()
-plt.show()
+    axs[0, 0].imshow(cv2.imread(path + left_file, cv2.IMREAD_GRAYSCALE), cmap='gray')
+    axs[0, 0].set_title("Left Image: " + left_file)
+    axs[0, 0].axis("off")
+
+    axs[0, 1].imshow(cv2.imread(path + right_file, cv2.IMREAD_GRAYSCALE), cmap='gray')
+    axs[0, 1].set_title("Right Image: " + right_file)
+    axs[0, 1].axis("off")
+
+    im_disp = axs[1, 0].imshow(np.where(mask, disparity_np, np.nan), cmap="jet")
+    axs[1, 0].set_title("Disparity Map")
+    axs[1, 0].axis("off")
+    fig.colorbar(im_disp, ax=axs[1, 0], fraction=0.046, pad=0.04)
+
+    im_depth = axs[1, 1].imshow(np.where(mask, depth_metric, np.nan), cmap="inferno")
+    axs[1, 1].set_title("Metric Depth Map")
+    axs[1, 1].axis("off")
+    fig.colorbar(im_depth, ax=axs[1, 1], fraction=0.046, pad=0.04)
+
+    plt.tight_layout()
+    plt.show()
+
+else:
+    left_txt, right_txt = 'left_images.txt', 'right_images.txt'
+
+    # Read the file, ignoring comments (#) in the header
+    df = pd.read_csv(path + left_txt, delim_whitespace=True, comment="#", names=["id", "timestamp", "image_name"])
+    left_files = df["image_name"].tolist()
+
+    df = pd.read_csv(path + right_txt, delim_whitespace=True, comment="#", names=["id", "timestamp", "image_name"])
+    right_files = df["image_name"].tolist()
+
+    i = 0
+    os.makedirs(os.path.dirname(path+"out/"), exist_ok=True)
+    for left_file, right_file in zip(left_files, right_files):
+        disparity_np, depth_metric = depth_solver.depth(path + left_file, path + right_file)
+        parts = left_file.split("_")  # Split by '_'
+        index = int(parts[-1].split(".")[0])  # last part before ".png"
+        plt.imsave(path+"out/" + str(index) + "_disparity.png", np.where(mask, disparity_np, 0), cmap="jet")
+        plt.imsave(path+"out/" + str(index) + "_depth.png", np.where(mask, depth_metric, 0), cmap="inferno")
+        i += 1
+        if i%20 == 0:
+            print(f"{i} of {len(left_files)}")
+
+
