@@ -12,10 +12,95 @@ import torch.nn as nn
 import argparse
 import matplotlib.pyplot as plt
 from PIL import Image
+from abc import ABC, abstractmethod
 from core.utils.utils import InputPadder
 from core.raft_stereo import RAFTStereo
 
-# Load your input image using OpenCV and convert it to RGB
+class AbstractDisparitySolver(ABC):
+
+    @abstractmethod
+    def disparity(self, left_img, right_img):
+        pass
+
+class AbstractDepthSolver(ABC):
+    def __init__(self, focal_length_px :float, base_line: float):
+        self.f = focal_length_px
+        self.B = base_line
+    @abstractmethod
+    def depth (self, left_img, right_img):
+        pass
+class DisparityRAFT(AbstractDisparitySolver):
+    def __init__(self, args = None):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        if not args:
+            self.args = argparse.Namespace(
+                hidden_dims=[128, 128, 128],
+                n_downsample=2,
+                context_norm="batch",
+                n_gru_layers=3,
+                slow_fast_gru=False,
+                corr_implementation="reg",
+                corr_levels=4,
+                corr_radius=4,
+                shared_backbone=False,
+                mixed_precision=False  # add if the code uses this flag
+            )
+        else:
+            self.args = args
+
+        self.modelDP = torch.nn.DataParallel(RAFTStereo(self.args), device_ids=[0])
+        self.modelDP.load_state_dict(torch.load(checkpoint))
+
+        self.model = self.modelDP.module
+        self.model.to(self.device)
+        self.model.eval()
+
+    def disparity(self, left_img, right_img):
+        with torch.no_grad():
+            image1, image2 = self._loadImage(left_img), self._loadImage(right_img)
+
+            padder = InputPadder(image1.shape, divis_by=32)
+            image1, image2 = padder.pad(image1, image2)
+
+            _, flow_up = self.model(image1, image2, iters=32, test_mode=True)
+            flow_up = padder.unpad(flow_up).squeeze()
+
+        return -flow_up.cpu().numpy().squeeze()
+
+    def _loadImage(self, image_param):
+        if isinstance(image_param, str):  # a file path
+            img = Image.open(image_param)
+        elif isinstance(image_param, np.ndarray):  # an OpenCV image
+            img = Image.fromarray(cv2.cvtColor(image_param, cv2.COLOR_BGR2RGB))
+        else:
+            raise TypeError("Unsupported image format")
+
+        # Convert grayscale images to RGB
+        if img.mode in ("L", "LA"):
+            img = img.convert("RGB")
+
+        img = np.array(img).astype(np.uint8)  # to NumPy array
+        img = torch.from_numpy(img).permute(2, 0, 1).float()  # to Torch Tensor
+        return img[None].to(self.device)
+
+class DepthSimple(AbstractDepthSolver):
+    def __init__(self, focal_length_px :float, base_line: float, disparity_solver):
+        super().__init__(focal_length_px, base_line)
+        self.disparity_solver = disparity_solver
+
+    def depth(self, left_img, right_img):
+        disparity_np = self.disparity_solver.disparity(left_img, right_img)
+        valid = disparity_np > 1e-6
+        depth_metric = np.zeros_like(disparity_np, dtype=np.float32)
+        depth_metric[valid] = (self.f * self.B) / abs(disparity_np[valid])
+        #depth_metric = (f * B) / abs(disparity_np)
+        depth_metric = np.clip(depth_metric, 0.000, 40)
+        return disparity_np, depth_metric
+
+
+
+
 checkpoint = '/home/roman/Rainbow/camera/models/raft/raftstereo-sceneflow.pth'
 path = '/home/roman/Downloads/fpv_datasets/outdoor_forward_1_snapdragon_with_gt/img/'
 mask = cv2.imread('/home/roman/Downloads/fpv_datasets/mask.png', cv2.IMREAD_GRAYSCALE).astype(np.uint8) == 0
@@ -32,59 +117,11 @@ right_file = 'image_1_2148.png'
 # left_file = 'image_0_2375.png'
 # right_file = 'image_1_2375.png'
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-DEVICE = 'cuda'
 
-def load_image(imfile):
-    img = Image.open(imfile)
-    if img.mode in ("L", "LA"):
-        img = img.convert("RGB")
-    img = np.array(img).astype(np.uint8)
-    img = torch.from_numpy(img).permute(2, 0, 1).float()
-    return img[None].to(DEVICE)
+disparity_solver = DisparityRAFT()
+depth_solver = DepthSimple(277.48, 0.07919, disparity_solver)
+disparity_np, depth_metric = depth_solver.depth(path + left_file, path + right_file)
 
-args = argparse.Namespace(
-    hidden_dims=[128, 128, 128],
-    n_downsample=2,
-    context_norm="batch",
-    n_gru_layers=3,
-    slow_fast_gru=False,
-    corr_implementation="reg",
-    corr_levels=4,
-    corr_radius=4,
-    shared_backbone=False,
-    mixed_precision=False  # add if the code uses this flag
-)
-
-model = torch.nn.DataParallel(RAFTStereo(args), device_ids=[0])
-model.load_state_dict(torch.load(checkpoint))
-
-model = model.module
-model.to(DEVICE)
-model.eval()
-
-
-with torch.no_grad():
-    image1 = load_image(path+left_file)
-    image2 = load_image(path+right_file)
-
-    padder = InputPadder(image1.shape, divis_by=32)
-    image1, image2 = padder.pad(image1, image2)
-
-    _, flow_up = model(image1, image2, iters=32, test_mode=True)
-    flow_up = padder.unpad(flow_up).squeeze()
-
-disparity_np = -flow_up.cpu().numpy().squeeze()
-#disparity_np = np.clip(disparity_np, 0.0, 120)
-
-# Compute metric depth using calibration info: depth = f*B / disparity
-f = 277.48  # example focal length in pixels
-B = 0.07919  # example baseline in meters
-valid = disparity_np > 1e-6
-depth_metric = np.zeros_like(disparity_np, dtype=np.float32)
-#depth_metric[valid] = (f * B) / abs(disparity_np[valid])
-depth_metric = (f * B) / abs(disparity_np)
-depth_metric = np.clip(depth_metric, 0.000, 40)
 
 # Create a 2x2 plot:
 # First row: left and right images.
