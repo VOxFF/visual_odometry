@@ -31,10 +31,10 @@ for i, image_file in enumerate(image_files):
     parts = image_file.split("_")  # Split by '_'
     index = int(parts[-1].split(".")[0])  # last part before ".png"
     img = cv2.imread(path + image_file)
-    print(path + image_file)
     #img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    disp = cv2.imread(path + "out/" + str(index) + "_disparity.png")
-    depth = cv2.imread(path + "out/" + str(index) + "_depth.png")
+    disp = cv2.imread(path + "out_disp/" + str(index) + "_disparity.png")
+    depth = cv2.imread(path + "out_depth/" + str(index) + "_depth.png")
+
 
     # Ensure all images have the same height
     disp = cv2.resize(disp, (w, h))

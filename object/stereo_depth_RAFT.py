@@ -22,6 +22,11 @@ print("CUDA Available:", torch.cuda.is_available())
 print("Number of GPUs:", torch.cuda.device_count())
 print("Current Device:", torch.cuda.current_device() if torch.cuda.is_available() else "CPU")
 
+DEPTH_MIN = 0
+DEPTH_MAX = 20
+DISP_MIN = 0
+DISP_MAX = 40
+
 class AbstractDisparitySolver(ABC):
 
     @abstractmethod
@@ -97,17 +102,22 @@ class DepthSimple(AbstractDepthSolver):
 
     def depth(self, left_img, right_img):
         disparity_np = self.disparity_solver.disparity(left_img, right_img)
-        valid = disparity_np > 1e-6
+        import matplotlib.pyplot as plt
+
+        # print(f'{np.min(disparity_np)} and {np.max(disparity_np)}')
+        valid = disparity_np >= 0
         depth_metric = np.zeros_like(disparity_np, dtype=np.float32)
         depth_metric[valid] = (self.f * self.B) / abs(disparity_np[valid])
         #depth_metric = (f * B) / abs(disparity_np)
-        depth_metric = np.clip(depth_metric, 0.000, 40)
+        depth_metric = np.clip(depth_metric, DEPTH_MIN, DEPTH_MAX)
+        disparity_np = np.clip(depth_metric, DISP_MIN, DISP_MAX)
         return disparity_np, depth_metric
 
 """
 here we go
 """
-checkpoint = '/home/roman/Rainbow/camera/models/raft/raftstereo-sceneflow.pth'
+#checkpoint = '/home/roman/Rainbow/camera/models/raft/raftstereo-sceneflow.pth'
+checkpoint = '/home/roman/Rainbow/camera/models/raft/raftstereo-eth3d.pth'
 disparity_solver = DisparityRAFT()
 depth_solver = DepthSimple(277.48, 0.07919, disparity_solver)
 
@@ -153,6 +163,7 @@ if single_frame:
     plt.show()
 
 else:
+    limit = 0 #200
     left_txt, right_txt = 'left_images.txt', 'right_images.txt'
 
     # Read the file, ignoring comments (#) in the header
@@ -162,14 +173,32 @@ else:
     df = pd.read_csv(path + right_txt, delim_whitespace=True, comment="#", names=["id", "timestamp", "image_name"])
     right_files = df["image_name"].tolist()
 
+    if limit:
+        left_files = left_files[:limit]
+        right_files = right_files[:limit]
+
+
     i = 0
-    os.makedirs(os.path.dirname(path+"out/"), exist_ok=True)
+    os.makedirs(os.path.dirname(path + "out_depth/"), exist_ok=True)
+    os.makedirs(os.path.dirname(path + "out_disp/"), exist_ok=True)
+
+    def normalize(img, min, max):
+        # Normalize using global min/max
+        normalized_disp = ((img - min) / (max - min) * 255).astype(np.uint8)
+        return normalized_disp
+
     for left_file, right_file in zip(left_files, right_files):
         disparity_np, depth_metric = depth_solver.depth(path + left_file, path + right_file)
+        disparity_np = normalize(disparity_np, DISP_MIN, DISP_MAX)
+        depth_metric = normalize(depth_metric, DISP_MIN, DISP_MAX)
+
+
         parts = left_file.split("_")  # Split by '_'
         index = int(parts[-1].split(".")[0])  # last part before ".png"
-        plt.imsave(path+"out/" + str(index) + "_disparity.png", np.where(mask, disparity_np, 0), cmap="jet")
-        plt.imsave(path+"out/" + str(index) + "_depth.png", np.where(mask, depth_metric, 0), cmap="inferno")
+
+
+        plt.imsave(path+"out_disp/" + str(index) + "_disparity.png", np.where(mask, disparity_np, 0), cmap="jet")
+        plt.imsave(path+"out_depth/" + str(index) + "_depth.png", np.where(mask, depth_metric, 0), cmap="inferno")
         i += 1
         if i%20 == 0:
             print(f"{i} of {len(left_files)}")
