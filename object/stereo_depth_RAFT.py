@@ -13,6 +13,7 @@ import pandas as pd
 import torch.nn as nn
 import argparse
 import matplotlib.pyplot as plt
+import torch.nn.functional as F
 from PIL import Image
 from abc import ABC, abstractmethod
 from core.utils.utils import InputPadder
@@ -25,7 +26,7 @@ print("Current Device:", torch.cuda.current_device() if torch.cuda.is_available(
 DEPTH_MIN = 0
 DEPTH_MAX = 20
 DISP_MIN = 0
-DISP_MAX = 40
+DISP_MAX = 100
 
 class AbstractDisparitySolver(ABC):
 
@@ -42,6 +43,7 @@ class AbstractDepthSolver(ABC):
         pass
 class DisparityRAFT(AbstractDisparitySolver):
     def __init__(self, args = None):
+        self.flow = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         if not args:
@@ -74,9 +76,17 @@ class DisparityRAFT(AbstractDisparitySolver):
             padder = InputPadder(image1.shape, divis_by=32)
             image1, image2 = padder.pad(image1, image2)
 
-            _, flow_up = self.model(image1, image2, iters=32, test_mode=True)
+            # Ensure `self.flow` is correctly sized
+            if self.flow is not None:
+                H, W = image1.shape[2], image1.shape[3]
+                self.flow = torch.zeros(1, 2, H // 4, W // 4, device=image1.device)
+                self.flow = self.flow.to(image1.device)
+
+            # Run model
+            _, flow_up = self.model(image1, image2, iters=32, flow_init=self.flow, test_mode=True)
             flow_up = padder.unpad(flow_up).squeeze()
 
+        self.flow = flow_up  # store for next frame
         return -flow_up.cpu().numpy().squeeze()
 
     def _loadImage(self, image_param):
@@ -102,22 +112,21 @@ class DepthSimple(AbstractDepthSolver):
 
     def depth(self, left_img, right_img):
         disparity_np = self.disparity_solver.disparity(left_img, right_img)
-        import matplotlib.pyplot as plt
 
-        # print(f'{np.min(disparity_np)} and {np.max(disparity_np)}')
-        valid = disparity_np >= 0
+        valid = disparity_np > 1e-6
         depth_metric = np.zeros_like(disparity_np, dtype=np.float32)
         depth_metric[valid] = (self.f * self.B) / abs(disparity_np[valid])
         #depth_metric = (f * B) / abs(disparity_np)
         depth_metric = np.clip(depth_metric, DEPTH_MIN, DEPTH_MAX)
-        disparity_np = np.clip(depth_metric, DISP_MIN, DISP_MAX)
+        #disparity_np = np.clip(disparity_np, DISP_MIN, DISP_MAX)
         return disparity_np, depth_metric
 
 """
 here we go
 """
-#checkpoint = '/home/roman/Rainbow/camera/models/raft/raftstereo-sceneflow.pth'
-checkpoint = '/home/roman/Rainbow/camera/models/raft/raftstereo-eth3d.pth'
+checkpoint = '/home/roman/Rainbow/camera/models/raft/raftstereo-sceneflow.pth'
+#checkpoint = '/home/roman/Rainbow/camera/models/raft/raftstereo-eth3d.pth'
+#checkpoint = '/home/roman/Rainbow/camera/models/raft/raftstereo-middlebury.pth' #good when swith left and right
 disparity_solver = DisparityRAFT()
 depth_solver = DepthSimple(277.48, 0.07919, disparity_solver)
 
@@ -127,8 +136,8 @@ path = '/home/roman/Downloads/fpv_datasets/outdoor_forward_1_snapdragon_with_gt/
 mask = cv2.imread('/home/roman/Downloads/fpv_datasets/mask.png', cv2.IMREAD_GRAYSCALE).astype(np.uint8) == 0
 
 if single_frame:
-    #img_idx = 1489
-    img_idx = 2148
+    img_idx = 1489
+    #img_idx = 2148
     #img_idx = 2375
 
     left_file = 'img/image_0_'+str(img_idx)+'.png'
@@ -189,14 +198,12 @@ else:
 
     for left_file, right_file in zip(left_files, right_files):
         disparity_np, depth_metric = depth_solver.depth(path + left_file, path + right_file)
-        disparity_np = normalize(disparity_np, DISP_MIN, DISP_MAX)
-        depth_metric = normalize(depth_metric, DISP_MIN, DISP_MAX)
+        #disparity_np = normalize(disparity_np, DISP_MIN, DISP_MAX)
+        #depth_metric = normalize(depth_metric, DISP_MIN, DISP_MAX)
 
 
         parts = left_file.split("_")  # Split by '_'
         index = int(parts[-1].split(".")[0])  # last part before ".png"
-
-
         plt.imsave(path+"out_disp/" + str(index) + "_disparity.png", np.where(mask, disparity_np, 0), cmap="jet")
         plt.imsave(path+"out_depth/" + str(index) + "_depth.png", np.where(mask, depth_metric, 0), cmap="inferno")
         i += 1
