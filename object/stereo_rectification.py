@@ -62,13 +62,18 @@ class StereoRectification(StereoRectificationInterface):
 
     def get_rectification_masks(self):
         """
-        Returns the precomputed rectification masks.
+        Returns the precomputed rectification masks. If they are not computed yet,
+        compute them using the resolution from parameters.
 
         Returns:
             tuple: (rectification_mask, roi_mask)
         """
+        # Lazy computation using resolution from parameters
         if self.rectification_mask is None or self.roi_mask is None:
-            raise RuntimeError("Rectification masks have not been computed yet. Call rectify_images() first.")
+            print("🔄 Rectification masks not found! Computing now...")
+            h, w = self.params.resolution[::-1]  # Ensure correct order (height, width)
+            self.rectification_mask, self.roi_mask = self._compute_masks(h, w)
+
         return self.rectification_mask, self.roi_mask
 
     def get_rectification_matrices(self):
@@ -84,7 +89,7 @@ class StereoRectification(StereoRectificationInterface):
 
     def _compute_masks(self, h, w):
         """
-        Computes rectification masks.
+        Computes rectification masks and expands them by 1 pixel in-place.
 
         Args:
             h (int): Image height.
@@ -99,17 +104,22 @@ class StereoRectification(StereoRectificationInterface):
         rectified_left = cv2.remap(dummy_image, self.map1_l, self.map2_l, cv2.INTER_LINEAR)
         rectified_right = cv2.remap(dummy_image, self.map1_r, self.map2_r, cv2.INTER_LINEAR)
 
-        # ✅ Rectification Mask (valid pixels)
-        rectification_mask = (rectified_left > 0) & (rectified_right > 0)
+        # Compute rectification mask (valid pixels)
+        self.rectification_mask = (rectified_left > 0) & (rectified_right > 0)
 
-        # ✅ ROI Mask (region of interest from stereoRectify)
-        roi_mask = np.zeros_like(rectification_mask, dtype=np.uint8)
+        # Shrink the rectification mask by 1 pixel using morphological erosion
+        kernel = np.ones((3, 3), np.uint8)  # 3x3 kernel shrinks by 1 pixel
+        self.rectification_mask = cv2.erode(self.rectification_mask.astype(np.uint8), kernel, iterations=1).astype(bool)
+
+        # Compute ROI Mask (region of interest from stereoRectify)
+        self.roi_mask = np.zeros_like(self.rectification_mask, dtype=np.uint8)
         roi1, roi2 = cv2.stereoRectify(
             self.params.K_l, self.params.D_l, self.params.K_r, self.params.D_r,
             (w, h), self.params.R, self.params.T, flags=cv2.CALIB_ZERO_DISPARITY
         )[5:7]
 
-        roi_mask[roi1[1]:roi1[1] + roi1[3], roi1[0]:roi1[0] + roi1[2]] = 1
-        roi_mask[roi2[1]:roi2[1] + roi2[3], roi2[0]:roi2[0] + roi2[2]] = 1
+        self.roi_mask[roi1[1]:roi1[1] + roi1[3], roi1[0]:roi1[0] + roi1[2]] = 1
+        self.roi_mask[roi2[1]:roi2[1] + roi2[3], roi2[0]:roi2[0] + roi2[2]] = 1
 
-        return rectification_mask, roi_mask
+        return self.rectification_mask, self.roi_mask
+

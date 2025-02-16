@@ -34,7 +34,7 @@ depth_solver = StereoDepth(params)
 mask = cv2.imread("/home/roman/Downloads/fpv_datasets/mask.png", cv2.IMREAD_GRAYSCALE).astype(np.uint8) == 0
 
 # **Single Frame Mode**
-single_frame = False  # Set to True for testing a single frame
+single_frame = True  # Set to True for testing a single frame
 
 if single_frame:
     # img_idx = 2800
