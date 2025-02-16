@@ -33,6 +33,16 @@ class StereoRectificationInterface(ABC):
         """ Return rectification matrices. """
         pass
 
+    @abstractmethod
+    def get_rectification_masks(self):
+        """
+        Returns precomputed rectification masks.
+
+        Returns:
+            tuple: (rectification_mask, roi_mask)
+        """
+        pass
+
 
 class StereoDisparityInterface(ABC):
     """

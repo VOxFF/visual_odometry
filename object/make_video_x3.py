@@ -20,7 +20,7 @@ w,h = img_rgb.shape[1], img_rgb.shape[0]
 
 frame_width = 3 * w  # 3 images side by side
 frame_height = h
-fps = 10  # Frames per second
+fps = 25  # Frames per second
 
 # Video writer setup
 
