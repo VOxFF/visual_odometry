@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import numpy as np
 
 class StereoParamsInterface(ABC):
     """ Abstract interface for stereo calibration parameters. """
@@ -30,4 +31,24 @@ class StereoRectificationInterface(ABC):
     @abstractmethod
     def get_rectification_matrices(self):
         """ Return rectification matrices. """
+        pass
+
+
+class StereoDisparityInterface(ABC):
+    """
+    Abstract interface for stereo disparity computation.
+    """
+
+    @abstractmethod
+    def compute_disparity(self, img_left: np.ndarray, img_right: np.ndarray) -> np.ndarray:
+        """
+        Computes the disparity map.
+
+        Args:
+            img_left (numpy.ndarray): Left input image.
+            img_right (numpy.ndarray): Right input image.
+
+        Returns:
+            numpy.ndarray: Disparity map.
+        """
         pass

@@ -3,7 +3,7 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 import pandas as pd
-from stereo_paramsYAML import StereoParamsYAML
+from stereo_params_YAML import StereoParamsYAML
 from stereo_rectification import StereoRectification
 from stereo_disparity_openCV import StereoDisparityOpenCV
 from stereo_depth import StereoDepth
@@ -21,14 +21,7 @@ https://fpv.ifi.uzh.ch/datasets/
 # Indoor dataset
 dataset_path = "/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/"
 yaml_file = "/home/roman/Downloads/fpv_datasets/indoor_forward_calib_snapdragon/indoor_forward_calib_snapdragon_imu.yaml"
-# left_file = dataset_path + "img/image_0_748.png"
-# right_file = dataset_path + "img/image_1_748.png"
 
-# left_file = dataset_path + "img/image_0_1325.png"
-# right_file = dataset_path + "img/image_1_1325.png"
-
-left_file = dataset_path + "img/image_0_2923.png"
-right_file = dataset_path + "img/image_1_2923.png"
 
 # Single image mode
 use_single_image = True
@@ -57,6 +50,11 @@ def normalize(img, min_val, max_val):
 
 # Process single image pair
 if use_single_image:
+    #img_idx = 1489
+    img_idx = 2148
+    left_file = dataset_path + f"img/image_0_{img_idx}.png"
+    right_file = dataset_path + f"img/image_1_{img_idx}.png"
+
     img_left = cv2.imread(left_file, cv2.IMREAD_GRAYSCALE)
     img_right = cv2.imread(right_file, cv2.IMREAD_GRAYSCALE)
 

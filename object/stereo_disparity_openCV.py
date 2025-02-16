@@ -1,8 +1,8 @@
 import cv2
 import numpy as np
-from stereo_interfaces import StereoRectificationInterface
+from stereo_interfaces import StereoRectificationInterface, StereoDisparityInterface
 
-class StereoDisparityOpenCV:
+class StereoDisparityOpenCV(StereoDisparityInterface):
     """
     Computes stereo disparity using OpenCV's StereoSGBM or StereoBM.
     Requires a rectification interface for input images.
@@ -33,7 +33,7 @@ class StereoDisparityOpenCV:
             self.stereo = cv2.StereoBM_create(numDisparities=num_disparities, blockSize=block_size)
         elif method == "SGBM":
             self.stereo = cv2.StereoSGBM_create(
-                minDisparity=-0,
+                minDisparity=0,
                 numDisparities=num_disparities,
                 blockSize=block_size,
                 P1=8 * 3 * block_size**2,
@@ -48,13 +48,13 @@ class StereoDisparityOpenCV:
         else:
             raise ValueError("Invalid method. Choose 'SGBM' or 'BM'.")
 
-    def compute_disparity(self, img_left, img_right):
+    def compute_disparity(self, img_left: np.ndarray, img_right: np.ndarray) -> np.ndarray:
         """
         Computes the disparity map after rectifying input images.
 
         Args:
-            img_left (numpy.ndarray): Left raw grayscale image.
-            img_right (numpy.ndarray): Right raw grayscale image.
+            img_left (numpy.ndarray): Left input image.
+            img_right (numpy.ndarray): Right input image.
 
         Returns:
             numpy.ndarray: Normalized disparity map.
