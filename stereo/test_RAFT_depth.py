@@ -17,7 +17,7 @@ yaml_file = "/home/roman/Downloads/fpv_datasets/outdoor_forward_calib_snapdragon
 #dataset_path = "/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/"
 #yaml_file = "/home/roman/Downloads/fpv_datasets/indoor_forward_calib_snapdragon/indoor_forward_calib_snapdragon_imu.yaml"
 
-checkpoint = "/home/roman/Rainbow/camera/models/raft/raftstereo-sceneflow.pth"
+checkpoint = "/home/roman/Rainbow/camera/models/raft-stereo/raftstereo-sceneflow.pth"
 
 # Depth clipping limits
 DEPTH_MIN = 0
@@ -39,7 +39,7 @@ depth_solver = StereoDepth(params)
 mask = cv2.imread("/home/roman/Downloads/fpv_datasets/mask.png", cv2.IMREAD_GRAYSCALE).astype(np.uint8) == 0
 
 # **Single Frame Mode**
-single_frame = False  # Set to True for testing a single frame
+single_frame = True  # Set to True for testing a single frame
 
 if single_frame:
     # img_idx = 2800
