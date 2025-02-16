@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from stereo_disparity_RAFT import DisparityRAFT
 from stereo_depth import StereoDepth
 from stereo_params_YAML import StereoParamsYAML
+from stereo_rectification import StereoRectification  # ✅ Added rectification
 
 # Outdoor dataset
 # dataset_path = "/home/roman/Downloads/fpv_datasets/outdoor_forward_1_snapdragon_with_gt/"
@@ -24,6 +25,9 @@ DEPTH_MAX = 20
 # Load calibration parameters
 params = StereoParamsYAML(yaml_file)
 
+# ✅ Initialize rectification
+rectification = StereoRectification(params)
+
 # Initialize disparity solver (RAFT-Stereo)
 disparity_solver = DisparityRAFT(checkpoint)
 
@@ -33,17 +37,29 @@ depth_solver = StereoDepth(params)
 # Load mask
 mask = cv2.imread("/home/roman/Downloads/fpv_datasets/mask.png", cv2.IMREAD_GRAYSCALE).astype(np.uint8) == 0
 
+# ✅ Toggle rectification mode
+use_rectification = True  # Set to True to use rectified images
+
 # **Single Frame Mode**
 single_frame = False  # Set to True for testing a single frame
 
 if single_frame:
-    #img_idx = 1489
-    img_idx = 2148
+    #img_idx = 2800
+    #img_idx = 2400
+    #img_idx = 1200
+    img_idx = 600
     left_file = dataset_path + f"img/image_0_{img_idx}.png"
     right_file = dataset_path + f"img/image_1_{img_idx}.png"
 
+    # Load raw images
+    img_left = cv2.imread(left_file, cv2.IMREAD_GRAYSCALE)
+    img_right = cv2.imread(right_file, cv2.IMREAD_GRAYSCALE)
+
+    if use_rectification:
+        img_left, img_right = rectification.rectify_images(img_left, img_right)
+
     # Compute disparity & depth
-    disparity = disparity_solver.compute_disparity(left_file, right_file)
+    disparity = disparity_solver.compute_disparity(img_left, img_right)
     depth = depth_solver.compute_depth(disparity)
 
     # ✅ Apply depth clipping
@@ -52,10 +68,10 @@ if single_frame:
     # Display images
     fig, axs = plt.subplots(2, 2, figsize=(12, 10))
 
-    axs[0, 0].imshow(cv2.imread(left_file, cv2.IMREAD_GRAYSCALE), cmap="gray")
-    axs[0, 0].set_title("Left Image")
-    axs[0, 1].imshow(cv2.imread(right_file, cv2.IMREAD_GRAYSCALE), cmap="gray")
-    axs[0, 1].set_title("Right Image")
+    axs[0, 0].imshow(img_left, cmap="gray")
+    axs[0, 0].set_title("Left Image (Rectified)" if use_rectification else "Left Image (Raw)")
+    axs[0, 1].imshow(img_right, cmap="gray")
+    axs[0, 1].set_title("Right Image (Rectified)" if use_rectification else "Right Image (Raw)")
 
     im_disp = axs[1, 0].imshow(np.where(mask, disparity, np.nan), cmap="jet")
     axs[1, 0].set_title("Disparity Map")
@@ -92,7 +108,14 @@ else:
         left_path = dataset_path + left_img
         right_path = dataset_path + right_img
 
-        disparity = disparity_solver.compute_disparity(left_path, right_path)
+        # Load raw images
+        img_left = cv2.imread(left_path, cv2.IMREAD_GRAYSCALE)
+        img_right = cv2.imread(right_path, cv2.IMREAD_GRAYSCALE)
+
+        if use_rectification:
+            img_left, img_right = rectification.rectify_images(img_left, img_right)
+
+        disparity = disparity_solver.compute_disparity(img_left, img_right)
         depth = depth_solver.compute_depth(disparity)
 
         # ✅ Apply depth clipping
