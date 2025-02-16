@@ -24,8 +24,8 @@ params = StereoParamsYAML(yaml_file)
 # ✅ Initialize rectification
 rectification = StereoRectification(params)
 
-# Initialize disparity solver (RAFT-Stereo)
-disparity_solver = DisparityRAFT(checkpoint)
+# ✅ Pass rectification to DisparityRAFT
+disparity_solver = DisparityRAFT(checkpoint, rectification)
 
 # Initialize depth solver (StereoDepth)
 depth_solver = StereoDepth(params)
@@ -33,9 +33,8 @@ depth_solver = StereoDepth(params)
 # Load mask
 mask = cv2.imread("/home/roman/Downloads/fpv_datasets/mask.png", cv2.IMREAD_GRAYSCALE).astype(np.uint8) == 0
 
-
 # **Single Frame Mode**
-single_frame = True  # Set to True for testing a single frame
+single_frame = False  # Set to True for testing a single frame
 
 if single_frame:
     # img_idx = 2800
@@ -50,12 +49,10 @@ if single_frame:
     img_right = cv2.imread(right_file, cv2.IMREAD_GRAYSCALE)
 
 
-    img_left, img_right = rectification.rectify_images(img_left, img_right)
-    rectification_mask, _ = rectification.get_rectification_masks()
-
     # Compute disparity & depth
     disparity = disparity_solver.compute_disparity(img_left, img_right)
     depth = depth_solver.compute_depth(disparity)
+    rectification_mask, _ = rectification.get_rectification_masks()
 
     # Apply depth clipping
     depth = np.clip(depth, DEPTH_MIN, DEPTH_MAX)
@@ -113,17 +110,14 @@ else:
         img_left = cv2.imread(left_path, cv2.IMREAD_GRAYSCALE)
         img_right = cv2.imread(right_path, cv2.IMREAD_GRAYSCALE)
 
-
-        img_left, img_right = rectification.rectify_images(img_left, img_right)
-        rectification_mask, _ = rectification.get_rectification_masks()
-
         disparity = disparity_solver.compute_disparity(img_left, img_right)
         depth = depth_solver.compute_depth(disparity)
+        rectification_mask, _ = rectification.get_rectification_masks()
 
-        # ✅ Apply depth clipping
+        # Apply depth clipping
         depth = np.clip(depth, DEPTH_MIN, DEPTH_MAX)
 
-        # ✅ Apply rectification mask for saving
+        # Apply rectification mask for saving
         disparity_saved = disparity.copy()
         depth_saved = depth.copy()
         disparity_saved[~rectification_mask] = 0  # Use 0 for saving

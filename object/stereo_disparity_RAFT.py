@@ -13,20 +13,22 @@ import argparse
 from PIL import Image
 from core.utils.utils import InputPadder
 from core.raft_stereo import RAFTStereo
-from stereo_interfaces import StereoDisparityInterface
+from stereo_interfaces import StereoDisparityInterface, StereoRectificationInterface
 
 class DisparityRAFT(StereoDisparityInterface):
-    def __init__(self, checkpoint: str, iters: int = 32):
+    def __init__(self, checkpoint: str, rectification: StereoRectificationInterface = None, iters: int = 32):
         """
-        Initializes RAFT-Stereo-based disparity computation.
+        Initializes RAFT-Stereo-based disparity computation with optional rectification.
 
         Args:
             checkpoint (str): Path to the RAFT-Stereo model checkpoint.
+            rectification (StereoRectificationInterface, optional): Rectification instance.
             iters (int): Number of iterations for the RAFT-Stereo algorithm.
         """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.iters = iters
         self.flow = None  # ✅ Stores flow for next frame propagation
+        self.rectification = rectification  # ✅ Store rectification instance
 
         self.args = argparse.Namespace(
             hidden_dims=[128, 128, 128],
@@ -62,13 +64,17 @@ class DisparityRAFT(StereoDisparityInterface):
         if img_left is None or img_right is None:
             raise ValueError("One or both images were not found or invalid.")
 
+        # Apply rectification if available
+        if self.rectification:
+            img_left, img_right = self.rectification.rectify_images(img_left, img_right)
+
         # Convert images for RAFT-Stereo
         image1, image2 = self._loadImage(img_left), self._loadImage(img_right)
 
         padder = InputPadder(image1.shape, divis_by=32)
         image1, image2 = padder.pad(image1, image2)
 
-        # ✅ Ensure `self.flow` is correctly sized
+        # Ensure `self.flow` is correctly sized
         if self.flow is not None:
             H, W = image1.shape[2], image1.shape[3]
             self.flow = torch.zeros(1, 2, H // 4, W // 4, device=image1.device)
@@ -78,7 +84,7 @@ class DisparityRAFT(StereoDisparityInterface):
             _, flow_up = self.model(image1, image2, iters=self.iters, flow_init=self.flow, test_mode=True)
             flow_up = padder.unpad(flow_up).squeeze()
 
-        self.flow = flow_up  # ✅ Store for next frame propagation
+        self.flow = flow_up  # Store for next frame propagation
         return -flow_up.cpu().numpy().squeeze()
 
     def _loadImage(self, image_param):
