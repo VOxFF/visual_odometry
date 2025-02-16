@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 import glob
 
-#path = '/home/roman/Downloads/fpv_datasets/outdoor_forward_1_snapdragon_with_gt/'
-path = '/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/'
+path = '/home/roman/Downloads/fpv_datasets/outdoor_forward_1_snapdragon_with_gt/'
+#path = '/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/'
 output_video = 'output_video.mp4'
 files_source = 'left_images.txt'
 
