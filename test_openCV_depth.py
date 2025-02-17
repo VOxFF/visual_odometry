@@ -3,10 +3,10 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 import pandas as pd
-from stereo_params_YAML import StereoParamsYAML
-from stereo_rectification import StereoRectification
-from stereo_disparity_openCV import StereoDisparityOpenCV
-from stereo_depth import StereoDepth
+from stereo.stereo_params_YAML import StereoParamsYAML
+from stereo.stereo_rectification import StereoRectification
+from stereo.stereo_disparity_openCV import StereoDisparityOpenCV
+from stereo.stereo_depth import StereoDepth
 
 """
 https://fpv.ifi.uzh.ch/datasets/

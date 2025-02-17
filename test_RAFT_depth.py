@@ -1,12 +1,20 @@
+
+
 import os
+import sys
+
+# Get the absolute path of RAFT-Stereo
+raft_path = os.path.join(os.path.dirname(__file__), "external", "RAFT-Stereo")
+sys.path.append(raft_path)  # Add RAFT to Python path
+
 import cv2
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from stereo_disparity_RAFT import DisparityRAFT
-from stereo_depth import StereoDepth
-from stereo_params_YAML import StereoParamsYAML
-from stereo_rectification import StereoRectification
+from stereo.stereo_disparity_RAFT import DisparityRAFT
+from stereo.stereo_depth import StereoDepth
+from stereo.stereo_params_YAML import StereoParamsYAML
+from stereo.stereo_rectification import StereoRectification
 
 
 # Outdoor dataset
@@ -17,7 +25,7 @@ yaml_file = "/home/roman/Downloads/fpv_datasets/outdoor_forward_calib_snapdragon
 #dataset_path = "/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/"
 #yaml_file = "/home/roman/Downloads/fpv_datasets/indoor_forward_calib_snapdragon/indoor_forward_calib_snapdragon_imu.yaml"
 
-checkpoint = "/home/roman/Rainbow/camera/models/raft-stereo/raftstereo-sceneflow.pth"
+checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raftstereo-sceneflow.pth"
 
 # Depth clipping limits
 DEPTH_MIN = 0

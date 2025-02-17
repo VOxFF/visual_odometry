@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from stereo_interfaces import StereoRectificationInterface, StereoParamsInterface
+from stereo.stereo_interfaces import StereoRectificationInterface, StereoParamsInterface
 
 
 class StereoRectification(StereoRectificationInterface):

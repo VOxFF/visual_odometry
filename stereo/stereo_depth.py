@@ -1,5 +1,5 @@
 import numpy as np
-from stereo_interfaces import StereoParamsInterface
+from stereo.stereo_interfaces import StereoParamsInterface
 
 class StereoDepth:
     """

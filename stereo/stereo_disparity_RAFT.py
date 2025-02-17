@@ -11,9 +11,10 @@ import numpy as np
 import torch.nn as nn
 import argparse
 from PIL import Image
+
 from core.utils.utils import InputPadder
 from core.raft_stereo import RAFTStereo
-from stereo_interfaces import StereoDisparityInterface, StereoRectificationInterface
+from stereo.stereo_interfaces import StereoDisparityInterface, StereoRectificationInterface
 
 class DisparityRAFT(StereoDisparityInterface):
     def __init__(self, checkpoint: str, rectification: StereoRectificationInterface = None, iters: int = 32):

@@ -2,7 +2,7 @@ import yaml
 import numpy as np
 import os
 import json
-from stereo_interfaces import StereoParamsInterface
+from stereo.stereo_interfaces import StereoParamsInterface
 
 
 class StereoParamsYAML(StereoParamsInterface):
