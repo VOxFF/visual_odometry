@@ -2,8 +2,6 @@
 https://github.com/princeton-vl/RAFT-Stereo
 """
 
-import sys
-sys.path.append("../external/RAFT-Stereo")
 
 import torch
 import cv2
