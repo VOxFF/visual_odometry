@@ -10,6 +10,7 @@ import argparse
 from PIL import Image
 
 from core.utils.utils import InputPadder
+from core.utils import flow_viz
 from core.raft import RAFT  # Optical Flow RAFT
 from flow.flow_interfaces import OpticalFlowInterface
 
@@ -64,14 +65,14 @@ class OpticalFlowRAFT(OpticalFlowInterface):
         # Ensure `self.flow` is correctly sized
         if self.flow is not None:
             H, W = image1.shape[2], image1.shape[3]
-            self.flow = torch.zeros(1, 2, H // 4, W // 4, device=image1.device)
+            self.flow = torch.zeros(1, 2, H // 8, W // 8, device=image1.device)  # ⚡ Changed division from 4 to 8
             self.flow = self.flow.to(image1.device)
 
         with torch.no_grad():
             _, flow_up = self.model(image1, image2, iters=self.iters, flow_init=self.flow, test_mode=True)
             flow_up = padder.unpad(flow_up).squeeze()
 
-        self.flow = flow_up  # ✅ Store for next frame propagation
+        self.flow = flow_up.unsqueeze(0)    # Store for next frame propagation
         return flow_up.cpu().numpy()
 
     def _loadImage(self, image_param):
@@ -90,3 +91,14 @@ class OpticalFlowRAFT(OpticalFlowInterface):
         img = np.array(img).astype(np.uint8)  # to NumPy array
         img = torch.from_numpy(img).permute(2, 0, 1).float()  # to Torch Tensor
         return img[None].to(self.device)
+
+    def to_image(self, flow_uv):
+        #return flow_viz.flow_to_image(flow_uv)/255
+
+        u, v = flow_uv
+        rad = np.sqrt(np.square(u) + np.square(v))
+        rad_max = np.max(rad)
+        epsilon = 1e-5
+        u = u / (rad_max + epsilon)
+        v = v / (rad_max + epsilon)
+        return flow_viz.flow_uv_to_colors(u,v)
