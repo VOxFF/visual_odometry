@@ -113,7 +113,6 @@ class OpticalFlowRAFT(OpticalFlowInterface):
         epsilon = 1e-5
         # u = u / (rad_max + epsilon)
         # v = v / (rad_max + epsilon)
-        print(f"max radius {rad_max}")
         if rad_max > 1.0:
             u = u / rad_max
             v = v / rad_max

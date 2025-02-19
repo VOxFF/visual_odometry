@@ -33,10 +33,10 @@ checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-things.p
 #checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-sintel.pth"     #still noisy for still frames
 #checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-chairs.pth"     #less noisy for still but confused with shadows
 
-single_frame = True
+single_frame = False
 
 # Multi-frame options
-render_images = False
+render_images = True
 compose_video = True
 limit = 0  # Set to None for full dataset
 
@@ -123,6 +123,8 @@ else:
     if limit:
         left_files = left_files[:limit]
 
+    rectification_mask = None
+
     if render_images:
         print("Rendering images.")
 
@@ -143,8 +145,16 @@ else:
             # Compute optical flow
             flow_uv = flow_solver.compute_flow(img1, img2)
 
+            if rectification_mask is None:
+                _, rectification_mask, __, ___ = rectification.get_rectification_masks()
+
+            # Apply rectification mask
+            flow_uv_masked = flow_uv.copy()
+            flow_uv_masked[0][~rectification_mask] = 0
+            flow_uv_masked[1][~rectification_mask] = 0
+
             # Convert flow to image representation
-            flow_image = flow_solver.to_image(flow_uv)
+            flow_image = flow_solver.to_image(flow_uv_masked)
 
             # Extract frame index
             index = int(left_files[i].split("_")[-1].split(".")[0])
