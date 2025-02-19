@@ -75,6 +75,10 @@ class OpticalFlowRAFT(OpticalFlowInterface):
         self.flow = flow_up.unsqueeze(0)    # Store for next frame propagation
         return flow_up.cpu().numpy()
 
+        # flow = flow_up.cpu().numpy()
+        # flow[abs(flow) < 0.1] = 0
+        # return flow
+
     def _loadImage(self, image_param):
         """Converts input image (file path or NumPy array) to the required format for RAFT."""
         if isinstance(image_param, str):  # a file path
@@ -99,6 +103,11 @@ class OpticalFlowRAFT(OpticalFlowInterface):
         rad = np.sqrt(np.square(u) + np.square(v))
         rad_max = np.max(rad)
         epsilon = 1e-5
-        u = u / (rad_max + epsilon)
-        v = v / (rad_max + epsilon)
+        # u = u / (rad_max + epsilon)
+        # v = v / (rad_max + epsilon)
+        print(f"max radius {rad_max}")
+        if rad_max > 1.0:
+            u = u / rad_max
+            v = v / rad_max
+
         return flow_viz.flow_uv_to_colors(u,v)

@@ -20,9 +20,13 @@ from utilities.video_composition import make_stacked_video
 dataset_path = "/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/"
 
 # RAFT Optical Flow checkpoint
-checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-things.pth"
+checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-things.pth"      #good results but noisy for still frames
+#checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-kitti.pth"      #less no motin noise but distorted on normal frames
+#checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-small.pth"      #needs paramter tweaking
+#checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-sintel.pth"     #still noisy for still frames
+#checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-chairs.pth"     #less noisy for still but confused with shadows
 
-single_frame = False
+single_frame = True
 
 # Multi-frame options
 render_images = False
@@ -34,7 +38,10 @@ flow_solver = OpticalFlowRAFT(checkpoint)
 
 if single_frame:
     # Select image pair
-    img_idx = 600  # Change as needed
+    img_idx = 0
+    img_idx = 50
+    #img_idx = 600
+    #img_idx = 2000
     frame1 = dataset_path + f"img/image_0_{img_idx}.png"
     frame2 = dataset_path + f"img/image_0_{img_idx+1}.png"  # Next frame in sequence
 
@@ -54,7 +61,7 @@ if single_frame:
     # flow_magnitude = np.sqrt(flow_dx**2 + flow_dy**2)  # Compute magnitude
 
     # Visualization
-    fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+    fig, axs = plt.subplots(1, 5, figsize=(25, 5))
 
     axs[0].imshow(img1, cmap="gray")
     axs[0].set_title("Frame 1")
@@ -64,13 +71,27 @@ if single_frame:
     axs[1].set_title("Frame 2")
     axs[1].axis("off")
 
-    im_flow = axs[2].imshow(flow_solver.to_image(flow_uv), cmap=None)
-    axs[2].set_title("Optical Flow Magnitude")
+    # Optical Flow U (Horizontal)
+    im_flow_u = axs[2].imshow(flow_uv[0], cmap=None)
+    axs[2].set_title("Optical Flow U")
     axs[2].axis("off")
-    fig.colorbar(im_flow, ax=axs[2], fraction=0.046, pad=0.04)
+    fig.colorbar(im_flow_u, ax=axs[2], fraction=0.046, pad=0.04)
+
+    # Optical Flow V (Vertical)
+    im_flow_v = axs[3].imshow(flow_uv[1], cmap=None)
+    axs[3].set_title("Optical Flow V")
+    axs[3].axis("off")
+    fig.colorbar(im_flow_v, ax=axs[3], fraction=0.046, pad=0.04)
+
+    # Full Optical Flow
+    im_flow = axs[4].imshow(flow_solver.to_image(flow_uv), cmap=None)
+    axs[4].set_title("Optical Flow")
+    axs[4].axis("off")
+    fig.colorbar(im_flow, ax=axs[4], fraction=0.046, pad=0.04)  
 
     plt.tight_layout()
     plt.show()
+
 else:
     left_txt = dataset_path + "left_images.txt"
 
@@ -83,7 +104,6 @@ else:
 
     if render_images:
         print("Rendering images.")
-
 
 
         os.makedirs(dataset_path + "out_flow/", exist_ok=True)
