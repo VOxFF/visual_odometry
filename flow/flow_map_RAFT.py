@@ -12,21 +12,24 @@ from PIL import Image
 from core.utils.utils import InputPadder
 from core.utils import flow_viz
 from core.raft import RAFT  # Optical Flow RAFT
+from stereo.stereo_interfaces import StereoRectificationInterface
 from flow.flow_interfaces import OpticalFlowInterface
 
 
 class OpticalFlowRAFT(OpticalFlowInterface):
-    def __init__(self, checkpoint: str, iters: int = 32):
+    def __init__(self, checkpoint: str, rectification: StereoRectificationInterface = None, iters: int = 32):
         """
-        Initializes RAFT-based optical flow computation.
+        Initializes RAFT-based optical flow computation with optional rectification.
 
         Args:
             checkpoint (str): Path to the RAFT model checkpoint.
+            rectification (StereoRectificationInterface, optional): Rectification instance.
             iters (int): Number of iterations for the RAFT algorithm.
         """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.iters = iters
         self.flow = None  # Stores flow for next frame propagation
+        self.rectification = rectification  # Store rectification instance
 
         # Define RAFT arguments
         self.args = argparse.Namespace(
@@ -56,6 +59,11 @@ class OpticalFlowRAFT(OpticalFlowInterface):
         if img1 is None or img2 is None:
             raise ValueError("One or both images were not found or invalid.")
 
+        # Apply rectification if available
+        if self.rectification: #use left but it should be improved
+            img1, _1 = self.rectification.rectify_images(img1, None)
+            img2, _2 = self.rectification.rectify_images(img2, None)
+
         # Convert images for RAFT
         image1, image2 = self._loadImage(img1), self._loadImage(img2)
 
@@ -72,7 +80,7 @@ class OpticalFlowRAFT(OpticalFlowInterface):
             _, flow_up = self.model(image1, image2, iters=self.iters, flow_init=self.flow, test_mode=True)
             flow_up = padder.unpad(flow_up).squeeze()
 
-        self.flow = flow_up.unsqueeze(0)    # Store for next frame propagation
+        self.flow = flow_up.unsqueeze(0)  # ✅ Store for next frame propagation
         return flow_up.cpu().numpy()
 
         # flow = flow_up.cpu().numpy()
@@ -110,4 +118,4 @@ class OpticalFlowRAFT(OpticalFlowInterface):
             u = u / rad_max
             v = v / rad_max
 
-        return flow_viz.flow_uv_to_colors(u,v)
+        return flow_viz.flow_uv_to_colors(u, v)

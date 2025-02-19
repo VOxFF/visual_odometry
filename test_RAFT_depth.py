@@ -48,7 +48,7 @@ depth_solver = StereoDepth(params)
 mask = cv2.imread("/home/roman/Downloads/fpv_datasets/mask.png", cv2.IMREAD_GRAYSCALE).astype(np.uint8) == 0
 
 
-single_frame = False  # Set to True for testing a single frame
+single_frame = True  # Set to True for testing a single frame
 
 # Multi-frame options
 render_images = False
@@ -68,11 +68,10 @@ if single_frame:
     img_left = cv2.imread(left_file, cv2.IMREAD_GRAYSCALE)
     img_right = cv2.imread(right_file, cv2.IMREAD_GRAYSCALE)
 
-
     # Compute disparity & depth
     disparity = disparity_solver.compute_disparity(img_left, img_right)
     depth = depth_solver.compute_depth(disparity)
-    rectification_mask, _ = rectification.get_rectification_masks()
+    rectification_mask, _, __, ___ = rectification.get_rectification_masks()
 
     # Apply depth clipping
     depth = np.clip(depth, DEPTH_MIN, DEPTH_MAX)
@@ -135,7 +134,7 @@ else:
 
             disparity = disparity_solver.compute_disparity(img_left, img_right)
             depth = depth_solver.compute_depth(disparity)
-            rectification_mask, _ = rectification.get_rectification_masks()
+            rectification_mask, _, __, ___ = rectification.get_rectification_masks()
 
             # Apply depth clipping
             depth = np.clip(depth, DEPTH_MIN, DEPTH_MAX)

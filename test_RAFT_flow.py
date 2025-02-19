@@ -13,11 +13,18 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from flow.flow_map_RAFT import OpticalFlowRAFT
+from stereo.stereo_params_YAML import StereoParamsYAML
+from stereo.stereo_rectification import StereoRectification
 from utilities.video_composition import make_stacked_video
 
 
-# Dataset Path (Change to your dataset)
+# Outdoor dataset
+# dataset_path = "/home/roman/Downloads/fpv_datasets/outdoor_forward_1_snapdragon_with_gt/"
+# yaml_file = "/home/roman/Downloads/fpv_datasets/outdoor_forward_calib_snapdragon/camchain-imucam-outdoor_forward_calib_snapdragon_imu.yaml"
+
+# Indoor dataset
 dataset_path = "/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/"
+yaml_file = "/home/roman/Downloads/fpv_datasets/indoor_forward_calib_snapdragon/indoor_forward_calib_snapdragon_imu.yaml"
 
 # RAFT Optical Flow checkpoint
 checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-things.pth"      #good results but noisy for still frames
@@ -33,15 +40,23 @@ render_images = False
 compose_video = True
 limit = 0  # Set to None for full dataset
 
+# Load calibration parameters
+params = StereoParamsYAML(yaml_file)
+
+# Initialize rectification
+rectification = StereoRectification(params)
+
 # Load Optical Flow Solver (RAFT)
-flow_solver = OpticalFlowRAFT(checkpoint)
+flow_solver = OpticalFlowRAFT(checkpoint, rectification)
 
 if single_frame:
     # Select image pair
-    img_idx = 0
-    img_idx = 50
+    #img_idx = 0
+    #img_idx = 50
     #img_idx = 600
+    img_idx = 1200
     #img_idx = 2000
+    #img_idx = 2800
     frame1 = dataset_path + f"img/image_0_{img_idx}.png"
     frame2 = dataset_path + f"img/image_0_{img_idx+1}.png"  # Next frame in sequence
 
@@ -54,6 +69,17 @@ if single_frame:
 
     # Compute optical flow
     flow_uv = flow_solver.compute_flow(img1, img2)
+    _, rectification_mask, __, ___ = rectification.get_rectification_masks()
+
+    # Apply rectification mask
+    flow_uv_masked = flow_uv.copy()
+    flow_uv_masked[0][~rectification_mask] = 0 # Use 0 for compuation
+    flow_uv_masked[1][~rectification_mask] = 0 # Use 0 for computation
+
+    flow_ring = flow_solver.to_image(flow_uv_masked)
+
+    flow_uv_masked[0][~rectification_mask] = np.nan  # Use NaN for visualization
+    flow_uv_masked[1][~rectification_mask] = np.nan  # Use NaN for visualization
 
     # Visualization
     fig, axs = plt.subplots(1, 5, figsize=(25, 5))
@@ -67,19 +93,19 @@ if single_frame:
     axs[1].axis("off")
 
     # Optical Flow U (Horizontal)
-    im_flow_u = axs[2].imshow(flow_uv[0], cmap=None)
+    im_flow_u = axs[2].imshow(flow_uv_masked[0], cmap=None)
     axs[2].set_title("Optical Flow U")
     axs[2].axis("off")
     fig.colorbar(im_flow_u, ax=axs[2], fraction=0.046, pad=0.04)
 
     # Optical Flow V (Vertical)
-    im_flow_v = axs[3].imshow(flow_uv[1], cmap=None)
+    im_flow_v = axs[3].imshow(flow_uv_masked[1], cmap=None)
     axs[3].set_title("Optical Flow V")
     axs[3].axis("off")
     fig.colorbar(im_flow_v, ax=axs[3], fraction=0.046, pad=0.04)
 
     # Full Optical Flow
-    im_flow = axs[4].imshow(flow_solver.to_image(flow_uv), cmap=None)
+    im_flow = axs[4].imshow(flow_ring, cmap=None)
     axs[4].set_title("Optical Flow")
     axs[4].axis("off")
     fig.colorbar(im_flow, ax=axs[4], fraction=0.046, pad=0.04)
