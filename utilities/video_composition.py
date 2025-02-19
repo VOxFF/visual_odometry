@@ -42,7 +42,6 @@ def make_stacked_video(
 
     for i, filename in enumerate(list_of_filenames):
         transformed_images = []
-
         for transform in list_of_file_transformations:
             transformed_path = os.path.join(path, transform(filename))
             transformed_img = cv2.imread(transformed_path)

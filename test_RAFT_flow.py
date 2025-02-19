@@ -55,11 +55,6 @@ if single_frame:
     # Compute optical flow
     flow_uv = flow_solver.compute_flow(img1, img2)
 
-    # Extract flow components (dx, dy)
-    # flow_dx = flow_uv[..., 0]
-    # flow_dy = flow_uv[..., 1]
-    # flow_magnitude = np.sqrt(flow_dx**2 + flow_dy**2)  # Compute magnitude
-
     # Visualization
     fig, axs = plt.subplots(1, 5, figsize=(25, 5))
 
@@ -87,7 +82,7 @@ if single_frame:
     im_flow = axs[4].imshow(flow_solver.to_image(flow_uv), cmap=None)
     axs[4].set_title("Optical Flow")
     axs[4].axis("off")
-    fig.colorbar(im_flow, ax=axs[4], fraction=0.046, pad=0.04)  
+    fig.colorbar(im_flow, ax=axs[4], fraction=0.046, pad=0.04)
 
     plt.tight_layout()
     plt.show()
@@ -104,7 +99,6 @@ else:
 
     if render_images:
         print("Rendering images.")
-
 
         os.makedirs(dataset_path + "out_flow/", exist_ok=True)
 

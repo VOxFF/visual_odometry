@@ -15,6 +15,7 @@ from stereo.stereo_disparity_RAFT import DisparityRAFT
 from stereo.stereo_depth import StereoDepth
 from stereo.stereo_params_YAML import StereoParamsYAML
 from stereo.stereo_rectification import StereoRectification
+from utilities.video_composition import make_stacked_video
 
 
 # Outdoor dataset
@@ -27,17 +28,17 @@ yaml_file = "/home/roman/Downloads/fpv_datasets/outdoor_forward_calib_snapdragon
 
 checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raftstereo-sceneflow.pth"
 
-# Depth clipping limits
+# Depth clipping limits - not sure that we need this
 DEPTH_MIN = 0
 DEPTH_MAX = 20
 
 # Load calibration parameters
 params = StereoParamsYAML(yaml_file)
 
-# ✅ Initialize rectification
+# Initialize rectification
 rectification = StereoRectification(params)
 
-# ✅ Pass rectification to DisparityRAFT
+# Pass rectification to DisparityRAFT
 disparity_solver = DisparityRAFT(checkpoint, rectification)
 
 # Initialize depth solver (StereoDepth)
@@ -46,9 +47,15 @@ depth_solver = StereoDepth(params)
 # Load mask
 mask = cv2.imread("/home/roman/Downloads/fpv_datasets/mask.png", cv2.IMREAD_GRAYSCALE).astype(np.uint8) == 0
 
-# **Single Frame Mode**
-single_frame = True  # Set to True for testing a single frame
 
+single_frame = False  # Set to True for testing a single frame
+
+# Multi-frame options
+render_images = False
+compose_video = True
+limit = 0  # Set to None for full dataset
+
+# **Single Frame Mode**
 if single_frame:
     # img_idx = 2800
     # img_idx = 2400
@@ -99,7 +106,6 @@ if single_frame:
 
 # **Batch Processing Mode**
 else:
-    limit = 0  # Set to None for full dataset
     left_txt, right_txt = dataset_path + "left_images.txt", dataset_path + "right_images.txt"
 
     # Read filenames, ignoring comments (#)
@@ -112,37 +118,55 @@ else:
         left_files = left_files[:limit]
         right_files = right_files[:limit]
 
-    os.makedirs(dataset_path + "out_disp/", exist_ok=True)
-    os.makedirs(dataset_path + "out_depth/", exist_ok=True)
+    # Render frames
+    if render_images:
+        print("Rendering images.")
 
-    for i, (left_img, right_img) in enumerate(zip(left_files, right_files)):
-        left_path = dataset_path + left_img
-        right_path = dataset_path + right_img
+        os.makedirs(dataset_path + "out_disp/", exist_ok=True)
+        os.makedirs(dataset_path + "out_depth/", exist_ok=True)
 
-        # Load raw images
-        img_left = cv2.imread(left_path, cv2.IMREAD_GRAYSCALE)
-        img_right = cv2.imread(right_path, cv2.IMREAD_GRAYSCALE)
+        for i, (left_img, right_img) in enumerate(zip(left_files, right_files)):
+            left_path = dataset_path + left_img
+            right_path = dataset_path + right_img
 
-        disparity = disparity_solver.compute_disparity(img_left, img_right)
-        depth = depth_solver.compute_depth(disparity)
-        rectification_mask, _ = rectification.get_rectification_masks()
+            # Load raw images
+            img_left = cv2.imread(left_path, cv2.IMREAD_GRAYSCALE)
+            img_right = cv2.imread(right_path, cv2.IMREAD_GRAYSCALE)
 
-        # Apply depth clipping
-        depth = np.clip(depth, DEPTH_MIN, DEPTH_MAX)
+            disparity = disparity_solver.compute_disparity(img_left, img_right)
+            depth = depth_solver.compute_depth(disparity)
+            rectification_mask, _ = rectification.get_rectification_masks()
 
-        # Apply rectification mask for saving
-        disparity_saved = disparity.copy()
-        depth_saved = depth.copy()
-        disparity_saved[~rectification_mask] = 0  # Use 0 for saving
-        depth_saved[~rectification_mask] = 0  # Use 0 for saving
+            # Apply depth clipping
+            depth = np.clip(depth, DEPTH_MIN, DEPTH_MAX)
 
-        index = int(left_img.split("_")[-1].split(".")[0])  # Extract frame index
+            # Apply rectification mask for saving
+            disparity_saved = disparity.copy()
+            depth_saved = depth.copy()
+            disparity_saved[~rectification_mask] = 0  # Use 0 for saving
+            depth_saved[~rectification_mask] = 0  # Use 0 for saving
 
-        # Save disparity & depth
-        plt.imsave(dataset_path + f"out_disp/{index}_disparity.png", np.where(mask, disparity_saved, 0), cmap="jet")
-        plt.imsave(dataset_path + f"out_depth/{index}_depth.png", np.where(mask, depth_saved, 0), cmap="inferno")
+            index = int(left_img.split("_")[-1].split(".")[0])  # Extract frame index
 
-        if i % 20 == 0:
-            print(f"Processed {i} of {len(left_files)} images.")
+            # Save disparity & depth
+            plt.imsave(dataset_path + f"out_disp/{index}_disparity.png", np.where(mask, disparity_saved, 0), cmap="jet")
+            plt.imsave(dataset_path + f"out_depth/{index}_depth.png", np.where(mask, depth_saved, 0), cmap="inferno")
+
+            if i % 20 == 0:
+                print(f"Processed {i} of {len(left_files)} images.")
+
+    # Compose video from images
+    if compose_video:
+
+        # Define transformation lambdas
+        transformations = [
+            lambda x: x,  # Original image
+            lambda x: x.replace("_0.png", "_1.png"),  # Right image
+            lambda x: f"out_disp/{int(x.split('_')[-1].split('.')[0])}_disparity.png", # Disparity image
+            lambda x: f"out_depth/{int(x.split('_')[-1].split('.')[0])}_depth.png"    # Depht image
+        ]
+
+        # Generate stacked video
+        make_stacked_video(dataset_path, left_files, "depth_video.mp4", transformations)
 
 print("Processing complete.")
