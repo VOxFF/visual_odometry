@@ -1,6 +1,25 @@
 from abc import ABC, abstractmethod
 import numpy as np
 
+class CameraParametersInterface(ABC):
+    """ Abstract interface for camera parameters. """
+
+    @abstractmethod
+    def get_intrinsics(self) -> np.ndarray:
+        """ Returns the intrinsic camera matrix. """
+        pass
+
+    @abstractmethod
+    def get_distortion_coeffs(self) -> np.ndarray:
+        """ Returns the distortion coefficients. """
+        pass
+
+    @abstractmethod
+    def get_resolution(self) -> tuple:
+        """ Returns the resolution of the camera as (width, height). """
+        pass
+
+
 class StereoParamsInterface(ABC):
     """ Abstract interface for stereo calibration parameters. """
 

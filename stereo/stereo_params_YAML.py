@@ -2,8 +2,31 @@ import yaml
 import numpy as np
 import os
 import json
+from stereo.stereo_interfaces import CameraParametersInterface
 from stereo.stereo_interfaces import StereoParamsInterface
 
+import numpy as np
+from stereo.stereo_interfaces import CameraParametersInterface
+
+
+class CameraParameters(CameraParametersInterface):
+    """
+    Implementation of CameraParametersInterface for storing and retrieving camera intrinsic parameters.
+    """
+
+    def __init__(self, K: np.ndarray, D: np.ndarray, resolution: tuple):
+        self.K = K
+        self.D = D
+        self.resolution = resolution
+
+    def get_intrinsic_matrix(self) -> np.ndarray:
+        return self.K
+
+    def get_distortion_coeffs(self) -> np.ndarray:
+        return self.D
+
+    def get_resolution(self) -> tuple:
+        return self.resolution
 
 class StereoParamsYAML(StereoParamsInterface):
     """
@@ -74,3 +97,20 @@ class StereoParamsYAML(StereoParamsInterface):
     def get_baseline(self):
         """ Returns the stereo camera baseline. """
         return self.baseline
+
+    def get_camera_params(self, camera: "StereoParamsInterface.StereoCamera"):
+        """
+        Returns the camera parameters for the specified camera.
+
+        Args:
+            camera (StereoParamsInterface.StereoCamera): The camera side (LEFT or RIGHT).
+
+        Returns:
+            CameraParameters: An instance containing the parameters of the selected camera.
+        """
+        if camera == StereoParamsInterface.StereoCamera.LEFT:
+            return CameraParameters(self.K_l, self.D_l, self.resolution)
+        elif camera == StereoParamsInterface.StereoCamera.RIGHT:
+            return CameraParameters(self.K_r, self.D_r, self.resolution)
+        else:
+            raise ValueError(f"Invalid camera side: {camera}")

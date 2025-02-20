@@ -33,7 +33,7 @@ checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-things.p
 #checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-sintel.pth"     #still noisy for still frames
 #checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-chairs.pth"     #less noisy for still but confused with shadows
 
-single_frame = False
+single_frame = True
 
 # Multi-frame options
 render_images = True
