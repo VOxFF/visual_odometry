@@ -1,6 +1,6 @@
 [submodule "external/RAFT-Stereo"]
 	path = external/RAFT-Stereo
-	url = https://github.com/princeton-vl/RAFT-Stereo.git
+	url = git@github.com:VOxFF/RAFT-Stereo.git
 [submodule "external/RAFT-Flow"]
 	path = external/RAFT-Flow
-	url = git@github.com:princeton-vl/RAFT.git
+	url = git@github.com:VOxFF/RAFT-Flow.git
