@@ -5,7 +5,7 @@ import sys
 raft_path = os.path.join(os.path.dirname(__file__), "external", "RAFT-Flow")
 sys.path.append(raft_path)  # Add RAFT to Python path
 
-core_path = os.path.join(raft_path, "core")
+core_path = os.path.join(raft_path, "flow_core")
 sys.path.insert(0, core_path)  # Ensure core modules are found
 
 import cv2

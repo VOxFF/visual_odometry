@@ -1,5 +1,6 @@
 """
-https://github.com/princeton-vl/RAFT
+uses https://github.com/VOxFF/RAFT-Flow
+a fork of https://github.com/princeton-vl/RAFT
 """
 
 import torch
@@ -9,9 +10,9 @@ import torch.nn as nn
 import argparse
 from PIL import Image
 
-from core.utils.utils import InputPadder
-from core.utils import flow_viz
-from core.raft import RAFT  # Optical Flow RAFT
+from flow_core.utils.utils import InputPadder
+from flow_core.utils import flow_viz
+from flow_core.raft import RAFT  # Optical Flow RAFT
 from stereo.stereo_interfaces import StereoRectificationInterface
 from flow.flow_interfaces import OpticalFlowInterface
 

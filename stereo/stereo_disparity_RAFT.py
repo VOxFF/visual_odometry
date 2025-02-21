@@ -1,5 +1,6 @@
 """
-https://github.com/princeton-vl/RAFT-Stereo
+uses https://github.com/VOxFF/RAFT-Stereo
+af fork of https://github.com/princeton-vl/RAFT-Stereo
 """
 
 
