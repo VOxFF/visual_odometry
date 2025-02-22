@@ -2,7 +2,7 @@ import numpy as np
 from stereo.stereo_interfaces import CameraParametersInterface
 from keypoints.keypoints_interfaces import Keypoints3DInterface
 
-class Keypoints3D(Keypoints3DInterface):
+class Keypoints3DXform(Keypoints3DInterface):
     """
     Implementation of Keypoints3DInterface for converting 2D keypoints to 3D and projecting them back.
     """
@@ -17,7 +17,7 @@ class Keypoints3D(Keypoints3DInterface):
         self.camera_params = camera_params
         self.K_inv = np.linalg.inv(self.camera_params.K)  # Precompute inverse intrinsic matrix
 
-    def keypoints_to_3D(self, keypoints: np.ndarray, depth_map: np.ndarray) -> np.ndarray:
+    def to_3d(self, keypoints: np.ndarray, depth_map: np.ndarray) -> np.ndarray:
         """
         Converts 2D keypoints to 3D world coordinates using the depth map.
 
@@ -42,7 +42,7 @@ class Keypoints3D(Keypoints3DInterface):
 
         return np.array(points_3D)
 
-    def project_3D_to_image(self, points_3D: np.ndarray) -> np.ndarray:
+    def to_2d(self, points_3D: np.ndarray) -> np.ndarray:
         """
         Projects 3D points back to the 2D image plane.
 

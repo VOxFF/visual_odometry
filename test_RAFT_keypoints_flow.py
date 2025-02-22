@@ -7,57 +7,23 @@ raft_flow_path = os.path.join(os.path.dirname(__file__), "external", "RAFT-Flow"
 sys.path.append(raft_stereo_path)
 sys.path.append(raft_flow_path)
 
+core_path = os.path.join(raft_flow_path, "flow_core")
+sys.path.insert(0, core_path)  # Ensure core modules are found
 
-stereo_core_path = os.path.join(raft_stereo_path, "core")
-sys.path.insert(0, stereo_core_path)  # Ensure core modules are found
-from stereo.stereo_disparity_RAFT import DisparityRAFT
-
-
-# Unload 'core' module from sys.modules to resolve the conflict
-if "core" in sys.modules:
-    del sys.modules["core"]
-
-if "core.utils" in sys.modules:
-    del sys.modules["core.utils"]
-
-sys.path = [p for p in sys.path if "RAFT-Stereo" not in p]
-flow_core_path = os.path.join(raft_flow_path, "core")
-flow_utils_path = os.path.join(flow_core_path , "utils")
-sys.path.insert(0, flow_core_path)  # Ensure core modules are found
-sys.path.insert(0, flow_utils_path)
-
-# ✅ Explicitly reload core modules
-import core.utils
-import core.raft
-import core.update
-import core.extractor
-import core.corr
-import utils.utils  # 🚀 Ensure `utils` is loaded correctly
-
-from importlib import reload
-reload(core.utils)
-reload(core.raft)
-reload(core.update)
-reload(core.extractor)
-reload(core.corr)
-reload(utils.utils)  # 🚀 Reload `utils.utils` so it's correctly interpreted
-
-from flow.flow_map_RAFT import OpticalFlowRAFT
-
-for m in sys.modules:
-    print(m)
 
 import cv2
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from stereo.stereo_interfaces import StereoParamsInterface
 from stereo.stereo_depth import StereoDepth
 from stereo.stereo_params_YAML import StereoParamsYAML
 from stereo.stereo_rectification import StereoRectification
-
-from keypoints.keypoints_uniform import UniformKeypoints
-from keypoints.keypoints_3d import Keypoints3D
+from stereo.stereo_disparity_RAFT import DisparityRAFT
+from flow.flow_map_RAFT import OpticalFlowRAFT
+from keypoints.keypoints_uniform import UniformKeyPoints
+from keypoints.keypoints_3d import Keypoints3DXform
 from keypoints.keypoints_3d_flow import Keypoints3DFlow
 
 # Dataset Path (Change to your dataset)
@@ -82,9 +48,9 @@ depth_solver = StereoDepth(params)
 flow_solver = OpticalFlowRAFT(flow_checkpoint, rectification)
 
 # Initialize Keypoint Extraction and 3D Processing
-uniform_keypoints = UniformKeypoints(rectification_mask=rectification.get_rectification_masks()[0])
-keypoints_3d_transform = Keypoints3D(params.get_camera_parameters(params.StereoCamera.LEFT))
-keypoints_flow_solver = Keypoints3DFlow(keypoints_3d_transform, rectification.get_rectification_masks()[0])
+pts_src = UniformKeyPoints(rectification_mask=rectification.get_rectification_masks()[0])
+pts_xform = Keypoints3DXform(params.get_camera_params(StereoParamsInterface.StereoCamera.LEFT))
+pts_flow = Keypoints3DFlow(params.get_camera_params(StereoParamsInterface.StereoCamera.LEFT), pts_xform, rectification.get_rectification_masks()[0])
 
 
 # **Single Frame Mode**
@@ -115,14 +81,24 @@ depth2 = np.clip(depth2, 0, 20)  # Depth clipping
 flow_uv = flow_solver.compute_flow(img1, img2)
 
 # Extract keypoints (uniformly distributed)
-keypoints = uniform_keypoints.get_keypoints(img1, max_number=200)
+keypoints = pts_src.get_keypoints(img1, max_number=200)
+##
+print(keypoints.shape)
+min_vals = keypoints.min(axis=0)  # [min_x, min_y]
+max_vals = keypoints.max(axis=0)  # [max_x, max_y]
 
+print("min_x:", min_vals[0])
+print("min_y:", min_vals[1])
+print("max_x:", max_vals[0])
+print("max_y:", max_vals[1])
+
+##
 # Compute 3D keypoints and motion
-keypoints_3d_f1 = keypoints_3d_transform.to_3d(keypoints, depth1)
-keypoints_3d_f2, valid_mask = keypoints_flow_solver.compute_3d_flow(keypoints, depth1, depth2, flow_uv)
+keypoints_3d_f1 = pts_xform.to_3d(keypoints, depth1)
+keypoints_3d_f2, valid_mask = pts_flow.compute_3d_flow(keypoints, depth1, depth2, flow_uv)
 
 # Project keypoints_3d_f2 back to 2D space
-projected_keypoints_f2 = keypoints_3d_transform.to_2d(keypoints_3d_f2[valid_mask])
+projected_keypoints_f2 = pts_xform.to_2d(keypoints_3d_f2[valid_mask])
 
 # Extract valid keypoints for visualization
 keypoints_valid = keypoints[valid_mask]

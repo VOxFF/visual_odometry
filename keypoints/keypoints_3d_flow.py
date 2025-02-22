@@ -1,6 +1,8 @@
 import numpy as np
-from flow.flow_interfaces import Keypoints3DFlowInterface
-from stereo.stereo_interfaces import CameraParametersInterface, Keypoints3DInterface
+from typing import Tuple
+from keypoints.keypoints_interfaces import Keypoints3DInterface
+from keypoints.keypoints_interfaces  import Keypoints3DFlowInterface
+from stereo.stereo_interfaces import CameraParametersInterface
 
 
 class Keypoints3DFlow(Keypoints3DFlowInterface):
@@ -18,7 +20,7 @@ class Keypoints3DFlow(Keypoints3DFlowInterface):
         self.keypoints_xform = keypoints_xform  # ✅ Uses Keypoints3DInterface for 3D transformations
         self.rectification_mask = rectification_mask
 
-    def compute_2d_flow(self, keypoints: np.ndarray, uv_flow: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def compute_2d_flow(self, keypoints: np.ndarray, uv_flow: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         Computes the new 2D positions of keypoints after applying optical flow.
 
@@ -31,6 +33,7 @@ class Keypoints3DFlow(Keypoints3DFlowInterface):
                 - np.ndarray: Updated keypoints of shape (N, 2).
                 - np.ndarray: Validity mask of shape (N,), True for valid points.
         """
+        uv_flow = np.transpose(uv_flow, (1, 2, 0)) #transpose to W,H,2
         keypoints_next = keypoints + uv_flow[keypoints[:, 1].astype(int), keypoints[:, 0].astype(int)]
 
         # Ensure keypoints remain inside the image bounds
@@ -44,7 +47,7 @@ class Keypoints3DFlow(Keypoints3DFlowInterface):
         return keypoints_next, valid_mask
 
     def compute_3d_flow(self, keypoints: np.ndarray, depth1: np.ndarray, depth2: np.ndarray, uv_flow: np.ndarray) -> \
-    tuple[np.ndarray, np.ndarray]:
+    Tuple[np.ndarray, np.ndarray]:
         """
         Computes the 3D motion of keypoints using optical flow and depth maps.
 
@@ -72,12 +75,20 @@ class Keypoints3DFlow(Keypoints3DFlowInterface):
         keypoints_3d = np.zeros((keypoints.shape[0], 3))
         keypoints_3d_next = np.zeros((keypoints.shape[0], 3))
 
+        # Extract depth values corresponding to keypoints in frame 1 and frame 2.
+        depth_vals1 = depth1[keypoints[:, 1].astype(int), keypoints[:, 0].astype(int)]
+        depth_vals2 = depth2[keypoints_next[:, 1].astype(int), keypoints_next[:, 0].astype(int)]
+
+        # Create the valid mask using these extracted depth values.
+        depth_valid_mask = valid_mask & (depth_vals1 > 0) & (depth_vals2 > 0)
+
+        # Convert valid 2D keypoints to 3D using the extracted depth values.
         if np.any(depth_valid_mask):
             keypoints_3d[depth_valid_mask] = self.keypoints_xform.to_3d(
-                keypoints[depth_valid_mask], depth1[depth_valid_mask]
+                keypoints[depth_valid_mask], depth_vals1[depth_valid_mask]
             )
             keypoints_3d_next[depth_valid_mask] = self.keypoints_xform.to_3d(
-                keypoints_next[depth_valid_mask], depth2[depth_valid_mask]
+                keypoints_next[depth_valid_mask], depth_vals2[depth_valid_mask]
             )
 
         return keypoints_3d_next, depth_valid_mask

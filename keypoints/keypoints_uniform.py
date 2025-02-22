@@ -16,7 +16,7 @@ class UniformKeyPoints(KeyPointsInterface):
         """
         self.rectification_mask = rectification_mask
 
-    def get_key_points(self, image, max_number: int):
+    def get_keypoints(self, image, max_number: int):
         """
         Generates uniformly distributed keypoints within the valid region of the rectification mask.
 

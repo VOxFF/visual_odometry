@@ -19,7 +19,7 @@ class CameraParameters(CameraParametersInterface):
         self.D = D
         self.resolution = resolution
 
-    def get_intrinsic_matrix(self) -> np.ndarray:
+    def get_intrinsics(self) -> np.ndarray:
         return self.K
 
     def get_distortion_coeffs(self) -> np.ndarray:

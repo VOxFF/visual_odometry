@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import numpy as np
+from enum import Enum
 
 class CameraParametersInterface(ABC):
     """ Abstract interface for camera parameters. """
@@ -22,6 +23,10 @@ class CameraParametersInterface(ABC):
 
 class StereoParamsInterface(ABC):
     """ Abstract interface for stereo calibration parameters. """
+
+    class StereoCamera(Enum):
+        LEFT = 'left'
+        RIGHT = 'right'
 
     @abstractmethod
     def load_params(self, input_data):

@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 from abc import ABC, abstractmethod
+from typing import Tuple
 
 class KeyPointsInterface(ABC):
     """
@@ -8,7 +9,7 @@ class KeyPointsInterface(ABC):
     """
 
     @abstractmethod
-    def get_key_points(self, image: np.ndarray, max_number: int) -> np.ndarray:
+    def get_keypoints(self, image: np.ndarray, max_number: int) -> np.ndarray:
         """
         Extracts keypoints from the input image.
 
@@ -28,7 +29,7 @@ class Keypoints3DInterface(ABC):
     """
 
     @abstractmethod
-    def keypoints_to_3D(self, keypoints: np.ndarray, depth_map: np.ndarray) -> np.ndarray:
+    def to_3d(self, keypoints: np.ndarray, depth_map: np.ndarray) -> np.ndarray:
         """
         Converts 2D keypoints to 3D world coordinates using the depth map.
 
@@ -42,7 +43,7 @@ class Keypoints3DInterface(ABC):
         pass
 
     @abstractmethod
-    def project_3D_to_image(self, points_3D: np.ndarray) -> np.ndarray:
+    def to_2d(self, points_3D: np.ndarray) -> np.ndarray:
         """
         Projects 3D points back to the 2D image plane.
 
@@ -60,7 +61,7 @@ class Keypoints3DFlowInterface(ABC):
     """ Interface for computing 2D and 3D keypoint flow. """
 
     @abstractmethod
-    def compute_2d_flow(self, keypoints: np.ndarray, uv_flow: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def compute_2d_flow(self, keypoints: np.ndarray, uv_flow: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         Computes the new 2D locations of keypoints after applying optical flow.
 
@@ -78,7 +79,7 @@ class Keypoints3DFlowInterface(ABC):
     @abstractmethod
     def compute_3d_flow(
         self, keypoints: np.ndarray, depth1: np.ndarray, depth2: np.ndarray, uv_flow: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Computes new 3D keypoints at frame (f+1) after applying optical flow.
 
