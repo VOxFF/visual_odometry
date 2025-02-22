@@ -54,7 +54,10 @@ pts_flow = Keypoints3DFlow(params.get_camera_params(StereoParamsInterface.Stereo
 
 
 # **Single Frame Mode**
-img_idx = 600  # Select frame index
+#img_idx = 600
+#img_idx = 1200
+#img_idx = 2000
+img_idx = 2800
 frame1 = dataset_path + f"img/image_0_{img_idx}.png"
 frame2 = dataset_path + f"img/image_0_{img_idx+1}.png"
 right_img = dataset_path + f"img/image_1_{img_idx}.png"
@@ -70,12 +73,12 @@ if img1 is None or img2 is None or img_right is None:
 # Compute disparity & depth for frame 1
 disparity = disparity_solver.compute_disparity(img1, img_right)
 depth1 = depth_solver.compute_depth(disparity)
-depth1 = np.clip(depth1, 0, 20)  # Depth clipping
+#depth1 = np.clip(depth1, 0, 20)  # Depth clipping
 
 # Compute disparity & depth for frame 2
 disparity2 = disparity_solver.compute_disparity(img2, img_right)
 depth2 = depth_solver.compute_depth(disparity2)
-depth2 = np.clip(depth2, 0, 20)  # Depth clipping
+#depth2 = np.clip(depth2, 0, 20)  # Depth clipping
 
 # Compute optical flow
 flow_uv = flow_solver.compute_flow(img1, img2)

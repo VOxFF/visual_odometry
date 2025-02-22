@@ -62,33 +62,29 @@ class Keypoints3DFlow(Keypoints3DFlowInterface):
                 - np.ndarray: Updated 3D keypoints of shape (N, 3).
                 - np.ndarray: Validity mask of shape (N,), True for valid points.
         """
-
-
         # Compute new 2D positions using optical flow
         keypoints_next, valid_mask = self.compute_2d_flow(keypoints, uv_flow)
 
-        # Extract valid depth values at both time steps
-        depth_valid_mask = valid_mask & (depth1[keypoints[:, 1].astype(int), keypoints[:, 0].astype(int)] > 0) & \
-                           (depth2[keypoints_next[:, 1].astype(int), keypoints_next[:, 0].astype(int)] > 0)
-
-        # Convert valid 2D keypoints to 3D
-        keypoints_3d = np.zeros((keypoints.shape[0], 3))
-        keypoints_3d_next = np.zeros((keypoints.shape[0], 3))
-
-        # Extract depth values corresponding to keypoints in frame 1 and frame 2.
+        # Extract per-keypoint depth values (for validity checking only)
         depth_vals1 = depth1[keypoints[:, 1].astype(int), keypoints[:, 0].astype(int)]
         depth_vals2 = depth2[keypoints_next[:, 1].astype(int), keypoints_next[:, 0].astype(int)]
 
-        # Create the valid mask using these extracted depth values.
+        # Create a valid mask ensuring that both depth values are positive
         depth_valid_mask = valid_mask & (depth_vals1 > 0) & (depth_vals2 > 0)
 
-        # Convert valid 2D keypoints to 3D using the extracted depth values.
+        # Initialize output arrays for 3D keypoints
+        keypoints_3d = np.zeros((keypoints.shape[0], 3))
+        keypoints_3d_next = np.zeros((keypoints.shape[0], 3))
+
         if np.any(depth_valid_mask):
+            # IMPORTANT: Pass the full 2D depth maps to to_3d
             keypoints_3d[depth_valid_mask] = self.keypoints_xform.to_3d(
-                keypoints[depth_valid_mask], depth_vals1[depth_valid_mask]
+                keypoints[depth_valid_mask], depth1
             )
             keypoints_3d_next[depth_valid_mask] = self.keypoints_xform.to_3d(
-                keypoints_next[depth_valid_mask], depth_vals2[depth_valid_mask]
+                keypoints_next[depth_valid_mask], depth2
             )
 
         return keypoints_3d_next, depth_valid_mask
+
+
