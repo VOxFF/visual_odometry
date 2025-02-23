@@ -25,6 +25,7 @@ from flow.flow_map_RAFT import OpticalFlowRAFT
 from keypoints.keypoints_uniform import UniformKeyPoints
 from keypoints.keypoints_3d import Keypoints3DXform
 from keypoints.keypoints_3d_flow import Keypoints3DFlow
+from utilities.video_composition import make_stacked_video
 
 # Dataset Path (Change to your dataset)
 dataset_path = "/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/"
@@ -46,6 +47,8 @@ img_idx = 50
 ghosting = False
 
 # Multi frame params
+render_images = False
+compose_movie = True
 limit = 0
 k = 25
 
@@ -66,8 +69,6 @@ flow_solver = OpticalFlowRAFT(flow_checkpoint, rectification)
 pts_src = UniformKeyPoints(rectification_mask=rectification.get_rectification_masks()[0])
 pts_xform = Keypoints3DXform(params.get_camera_params(StereoParamsInterface.StereoCamera.LEFT))
 pts_flow = Keypoints3DFlow(params.get_camera_params(StereoParamsInterface.StereoCamera.LEFT), pts_xform, rectification.get_rectification_masks()[0])
-
-
 
 
 
@@ -143,7 +144,9 @@ if single_frame:
     plt.show()
 
 else:
-    # **Muti Frame Frame Mode**
+    # **Multi Frame Frame Mode**
+    print("Multi frame")
+    output_dir = "out_flow_points"
 
     left_txt = os.path.join(dataset_path, "left_images.txt")
     df_left = pd.read_csv(left_txt, delim_whitespace=True, comment="#", names=["id", "timestamp", "image_name"])
@@ -151,7 +154,7 @@ else:
     if limit:
         left_files = left_files[:limit]
 
-    out_folder = os.path.join(dataset_path, "out_movie_3dflow")
+    out_folder = os.path.join(dataset_path, output_dir)
     os.makedirs(out_folder, exist_ok=True)
 
     # This will store the 2D tracks for visualization, but behind the scenes we will do 3D updates.
@@ -161,104 +164,114 @@ else:
     current_2D_keypoints = None
     current_3D_points = None
 
-    for i in range(len(left_files) - 1):
-        # Load the current and next images
-        frame1_path = os.path.join(dataset_path, left_files[i])
-        frame2_path = os.path.join(dataset_path, left_files[i + 1])
-        img1 = cv2.imread(frame1_path, cv2.IMREAD_GRAYSCALE)
-        img2 = cv2.imread(frame2_path, cv2.IMREAD_GRAYSCALE)
-        if img1 is None or img2 is None:
-            continue
+    if render_images:
+        for i in range(len(left_files) - 1):
+            # Load the current and next images
+            frame1_path = os.path.join(dataset_path, left_files[i])
+            frame2_path = os.path.join(dataset_path, left_files[i + 1])
+            img1 = cv2.imread(frame1_path, cv2.IMREAD_GRAYSCALE)
+            img2 = cv2.imread(frame2_path, cv2.IMREAD_GRAYSCALE)
+            if img1 is None or img2 is None:
+                continue
 
-        # Also load the corresponding right images so we can compute disparity/depth for both frames
-        # (Assuming you have "image_1_xxx.png" as well)
-        right1_path = frame1_path.replace("image_0_", "image_1_")
-        right2_path = frame2_path.replace("image_0_", "image_1_")
-        img_right1 = cv2.imread(right1_path, cv2.IMREAD_GRAYSCALE)
-        img_right2 = cv2.imread(right2_path, cv2.IMREAD_GRAYSCALE)
-        if img_right1 is None or img_right2 is None:
-            continue
+            # Also load the corresponding right images so we can compute disparity/depth for both frames
+            # (Assuming you have "image_1_xxx.png" as well)
+            right1_path = frame1_path.replace("image_0_", "image_1_")
+            right2_path = frame2_path.replace("image_0_", "image_1_")
+            img_right1 = cv2.imread(right1_path, cv2.IMREAD_GRAYSCALE)
+            img_right2 = cv2.imread(right2_path, cv2.IMREAD_GRAYSCALE)
+            if img_right1 is None or img_right2 is None:
+                continue
 
-        # Compute disparity/depth for frame i
-        disp1 = disparity_solver.compute_disparity(img1, img_right1)
-        depth1 = depth_solver.compute_depth(disp1)
+            # Compute disparity/depth for frame i
+            disp1 = disparity_solver.compute_disparity(img1, img_right1)
+            depth1 = depth_solver.compute_depth(disp1)
 
-        # Compute disparity/depth for frame i+1
-        disp2 = disparity_solver.compute_disparity(img2, img_right2)
-        depth2 = depth_solver.compute_depth(disp2)
+            # Compute disparity/depth for frame i+1
+            disp2 = disparity_solver.compute_disparity(img2, img_right2)
+            depth2 = depth_solver.compute_depth(disp2)
 
-        # If this is the start of a new k-segment, re-initialize the keypoints & tracks
-        if i % k == 0 or current_2D_keypoints is None:
-            # Detect 2D keypoints in the current frame
-            new_keypoints_2D = pts_src.get_keypoints(img1, max_number=200)
+            # If this is the start of a new k-segment, re-initialize the keypoints & tracks
+            if i % k == 0 or current_2D_keypoints is None:
+                # Detect 2D keypoints in the current frame
+                new_keypoints_2D = pts_src.get_keypoints(img1, max_number=200)
 
-            # Convert them to 3D
-            current_3D_points = pts_xform.to_3d(new_keypoints_2D, depth1)
+                # Convert them to 3D
+                current_3D_points = pts_xform.to_3d(new_keypoints_2D, depth1)
 
-            # Some 3D might be invalid (Z=0 or negative). Keep only valid ones
-            valid_3D_mask = (current_3D_points[:, 2] > 0)
-            current_3D_points = current_3D_points[valid_3D_mask]
-            current_2D_keypoints = new_keypoints_2D[valid_3D_mask]
+                # Some 3D might be invalid (Z=0 or negative). Keep only valid ones
+                valid_3D_mask = (current_3D_points[:, 2] > 0)
+                current_3D_points = current_3D_points[valid_3D_mask]
+                current_2D_keypoints = new_keypoints_2D[valid_3D_mask]
 
-            # Initialize the 2D track list: each track is a list of 2D points
-            tracks_2D = []
-            for pt in current_2D_keypoints:
-                tracks_2D.append([tuple(pt)])  # start each track with the current 2D point
+                # Initialize the 2D track list: each track is a list of 2D points
+                tracks_2D = []
+                for pt in current_2D_keypoints:
+                    tracks_2D.append([tuple(pt)])  # start each track with the current 2D point
 
-        # Compute optical flow from frame i to i+1
-        flow_uv = flow_solver.compute_flow(img1, img2)
+            # Compute optical flow from frame i to i+1
+            flow_uv = flow_solver.compute_flow(img1, img2)
 
-        # Now update the 3D points from frame i to frame i+1 using compute_3d_flow
-        # But note: compute_3d_flow requires 2D keypoints + depth1, depth2, uv_flow
-        # We'll do it in a loop or vectorized form:
 
-        # new_3D_points, valid_mask = pts_flow.compute_3d_flow(current_2D_keypoints, depth1, depth2, flow_uv)
-        # Instead of "keypoints", we use the "current_2D_keypoints" from last iteration
+            new_3D_points, valid_mask = pts_flow.compute_3d_flow(
+                current_2D_keypoints, depth1, depth2, flow_uv
+            )
 
-        new_3D_points, valid_mask = pts_flow.compute_3d_flow(
-            current_2D_keypoints, depth1, depth2, flow_uv
-        )
+            # Keep only the valid ones
+            new_3D_points = new_3D_points[valid_mask]
+            old_2D_keypoints = current_2D_keypoints[valid_mask]
 
-        # Keep only the valid ones
-        new_3D_points = new_3D_points[valid_mask]
-        old_2D_keypoints = current_2D_keypoints[valid_mask]
+            # Reproject the new 3D points to get their 2D locations in frame i+1
+            new_2D_keypoints = pts_xform.to_2d(new_3D_points)
 
-        # Reproject the new 3D points to get their 2D locations in frame i+1
-        new_2D_keypoints = pts_xform.to_2d(new_3D_points)
+            # Also store them for the next iteration
+            current_3D_points = new_3D_points
+            current_2D_keypoints = new_2D_keypoints
 
-        # Also store them for the next iteration
-        current_3D_points = new_3D_points
-        current_2D_keypoints = new_2D_keypoints
+            # We must also update the track lists accordingly, dropping those that are invalid
+            # Easiest is to build a new list of track arrays:
+            new_tracks_2D = []
+            idx_valid = 0
+            for track, was_valid in zip(tracks_2D, valid_mask):
+                if was_valid:
+                    # append the new point to this track
+                    track.append(tuple(new_2D_keypoints[idx_valid]))
+                    new_tracks_2D.append(track)
+                    idx_valid += 1
+                else:
+                    # this track is no longer valid
+                    pass
+            tracks_2D = new_tracks_2D
 
-        # We must also update the track lists accordingly, dropping those that are invalid
-        # Easiest is to build a new list of track arrays:
-        new_tracks_2D = []
-        idx_valid = 0
-        for track, was_valid in zip(tracks_2D, valid_mask):
-            if was_valid:
-                # append the new point to this track
-                track.append(tuple(new_2D_keypoints[idx_valid]))
-                new_tracks_2D.append(track)
-                idx_valid += 1
-            else:
-                # this track is no longer valid
-                pass
-        tracks_2D = new_tracks_2D
+            # Visualize
+            vis_img = cv2.cvtColor(img1, cv2.COLOR_GRAY2BGR)
 
-        # Visualize
-        vis_img = cv2.cvtColor(img1, cv2.COLOR_GRAY2BGR)
+            for track in tracks_2D:
+                pts = np.array(track, np.int32).reshape((-1, 1, 2))
+                cv2.polylines(vis_img, [pts], isClosed=False, color=(0, 0, 255), thickness=2)
 
-        for track in tracks_2D:
-            pts = np.array(track, np.int32).reshape((-1, 1, 2))
-            cv2.polylines(vis_img, [pts], isClosed=False, color=(0, 0, 255), thickness=2)
+            # Save the frame
+            out_filename = f"{i:06d}.png"
+            out_path = os.path.join(out_folder, out_filename)
+            cv2.imwrite(out_path, vis_img)
 
-        # Save the frame
-        out_filename = f"{i:06d}.png"
-        out_path = os.path.join(out_folder, out_filename)
-        cv2.imwrite(out_path, vis_img)
+            if i % 20 == 0:
+                print(f"Processed {i} / {len(left_files) - 1} frames")
 
-        if i % 20 == 0:
-            print(f"Processed {i} / {len(left_files) - 1} frames")
+    if compose_movie:
+        print("Composing movie.")
+        n = len(left_files)
+        left_files = left_files[:n - 1]
+
+        # Define transformation lambdas
+        transformations = [
+            lambda x: f"{output_dir}/{int(x.split('_')[-1].split('.')[0]):06d}.png",
+            #lambda x: f"{output_dir}/{int(x.split('_')[-1].split('.')[0])}_flow.png",
+        ]
+
+        # Generate stacked video
+        make_stacked_video(dataset_path, left_files, "keypoints_video.mp4", transformations)
+
 
 print("Processing complete.")
 
