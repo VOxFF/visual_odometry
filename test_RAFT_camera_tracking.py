@@ -1,0 +1,212 @@
+import os
+import sys
+import cv2
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # for 3D plotting
+
+raft_stereo_path = os.path.join(os.path.dirname(__file__), "external", "RAFT-Stereo")
+raft_flow_path = os.path.join(os.path.dirname(__file__), "external", "RAFT-Flow")
+sys.path.append(raft_stereo_path)
+sys.path.append(raft_flow_path)
+core_path = os.path.join(raft_flow_path, "flow_core")
+sys.path.insert(0, core_path)
+
+# Import necessary modules from your project.
+from stereo.stereo_interfaces import StereoParamsInterface
+from stereo.stereo_depth import StereoDepth
+from stereo.stereo_params_YAML import StereoParamsYAML
+from stereo.stereo_rectification import StereoRectification
+from stereo.stereo_disparity_RAFT import DisparityRAFT
+from flow.flow_map_RAFT import OpticalFlowRAFT
+from keypoints.keypoints_uniform import UniformKeyPoints
+from keypoints.keypoints_3d import Keypoints3DXform
+from keypoints.keypoints_3d_flow import Keypoints3DFlow
+from camera.camera_svd_xform import CameraSvdXform
+from utilities.video_composition import make_stacked_video
+
+# ------------------------------
+# Configuration and Initialization
+# ------------------------------
+
+dataset_path = "/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/"
+yaml_file = "/home/roman/Downloads/fpv_datasets/indoor_forward_calib_snapdragon/indoor_forward_calib_snapdragon_imu.yaml"
+
+# RAFT checkpoints
+stereo_checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raftstereo-sceneflow.pth"
+flow_checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-things.pth"
+
+# Multi-frame mode parameters
+compose_movie = False
+render_trajectory = True  # if True, we save trajectory plots for each frame
+limit = 300  # Use 0 for no limit
+k = 25  # Reinitialize keypoints every k frames
+
+# Load calibration parameters and initialize rectification.
+params = StereoParamsYAML(yaml_file)
+rectification = StereoRectification(params)
+
+# Initialize solvers.
+disparity_solver = DisparityRAFT(stereo_checkpoint, rectification)
+depth_solver = StereoDepth(params)
+flow_solver = OpticalFlowRAFT(flow_checkpoint, rectification)
+
+# Initialize keypoint extraction and 3D processing.
+rect_mask = rectification.get_rectification_masks()[0]
+pts_src = UniformKeyPoints(rectification_mask=rect_mask)
+pts_xform = Keypoints3DXform(params.get_camera_params(StereoParamsInterface.StereoCamera.LEFT))
+pts_flow = Keypoints3DFlow(params.get_camera_params(StereoParamsInterface.StereoCamera.LEFT), pts_xform, rect_mask)
+
+# The SVD-based implementation.
+cam_estimator = CameraSvdXform()
+
+# Output file to record per-frame camera transformation.
+traj_txt_path = os.path.join(dataset_path, "camera_trajectory.txt")
+traj_file = open(traj_txt_path, "w")
+traj_file.write("frame, translation, rotation_matrix_flat\n")
+
+# Global camera pose (4x4 homogeneous transformation); start at identity.
+T_global = np.eye(4)
+global_positions = []  # To accumulate camera positions for trajectory visualization.
+
+# Read left image filenames.
+left_txt = os.path.join(dataset_path, "left_images.txt")
+df_left = pd.read_csv(left_txt, delim_whitespace=True, comment="#", names=["id", "timestamp", "image_name"])
+left_files = df_left["image_name"].tolist()
+if limit:
+    left_files = left_files[:limit]
+
+# Create folder for trajectory visualization images.
+traj_img_dir = os.path.join(dataset_path, "out_traj")
+os.makedirs(traj_img_dir, exist_ok=True)
+
+# Create folder for the camera tracking outputs.
+output_dir = os.path.join(dataset_path, "out_cam_tracking")
+os.makedirs(output_dir, exist_ok=True)
+
+# ------------------------------
+# Multi-frame Camera Tracking
+# ------------------------------
+print("Starting multi-frame camera tracking...")
+
+# Variables to hold keypoints from the previous frame.
+current_2D_keypoints = None
+current_3D_points = None
+
+# Loop over consecutive frames (assuming left image sequence; stereo is used for depth).
+for i in range(len(left_files) - 1):
+    # Construct full file paths for current and next left images.
+    frame1_path = os.path.join(dataset_path, left_files[i])
+    frame2_path = os.path.join(dataset_path, left_files[i + 1])
+
+    # Load left images in grayscale.
+    img1 = cv2.imread(frame1_path, cv2.IMREAD_GRAYSCALE)
+    img2 = cv2.imread(frame2_path, cv2.IMREAD_GRAYSCALE)
+    if img1 is None or img2 is None:
+        print(f"Skipping frame index {i} due to missing images.")
+        continue
+
+    # For stereo, load corresponding right images (by replacing "image_0_" with "image_1_").
+    right1_path = frame1_path.replace("image_0_", "image_1_")
+    right2_path = frame2_path.replace("image_0_", "image_1_")
+    img_right1 = cv2.imread(right1_path, cv2.IMREAD_GRAYSCALE)
+    img_right2 = cv2.imread(right2_path, cv2.IMREAD_GRAYSCALE)
+    if img_right1 is None or img_right2 is None:
+        print(f"Skipping frame index {i} due to missing right images.")
+        continue
+
+    # Compute disparity and depth for frames i and i+1.
+    disp1 = disparity_solver.compute_disparity(img1, img_right1)
+    depth1 = depth_solver.compute_depth(disp1)
+    disp2 = disparity_solver.compute_disparity(img2, img_right2)
+    depth2 = depth_solver.compute_depth(disp2)
+
+    # Compute optical flow from frame i to i+1.
+    flow_uv = flow_solver.compute_flow(img1, img2)
+
+    # Reinitialize keypoints every k frames or if no keypoints exist yet.
+    if i % k == 0 or current_2D_keypoints is None:
+        new_keypoints_2D = pts_src.get_keypoints(img1, max_number=200)
+        all_3D = pts_xform.to_3d(new_keypoints_2D, depth1)
+        valid_mask = all_3D[:, 2] > 0  # Keep points with positive depth.
+        current_2D_keypoints = new_keypoints_2D[valid_mask]
+        current_3D_points = all_3D[valid_mask]
+    else:
+        # Compute new 3D keypoints for frame i+1 using optical flow.
+        new_3D_points, valid_mask = pts_flow.compute_3d_flow(current_2D_keypoints, depth1, depth2, flow_uv)
+        # If too few points remain, reinitialize.
+        if new_3D_points.shape[0] < 4:
+            new_keypoints_2D = pts_src.get_keypoints(img1, max_number=200)
+            all_3D = pts_xform.to_3d(new_keypoints_2D, depth1)
+            valid_mask = all_3D[:, 2] > 0
+            current_2D_keypoints = new_keypoints_2D[valid_mask]
+            current_3D_points = all_3D[valid_mask]
+            continue
+
+        old_3D = current_3D_points[valid_mask]
+        new_3D = new_3D_points[valid_mask]
+
+        # Estimate the relative transformation from frame i to i+1.
+        R_rel, t_rel = cam_estimator.compute_camera_xform(old_3D, new_3D)
+        T_rel = np.eye(4)
+        T_rel[:3, :3] = R_rel
+        T_rel[:3, 3] = t_rel
+
+        # Update the global camera pose incrementally.
+        T_global = T_global @ T_rel
+
+        # Write the current frame's transformation to file.
+        R_flat = R_rel.flatten()
+        traj_file.write(f"{i}, {t_rel.tolist()}, {R_flat.tolist()}\n")
+
+        # Extract the camera position from the global pose.
+        cam_pos = T_global[:3, 3]
+        global_positions.append(cam_pos)
+
+        # Reproject new 3D points to 2D for updating keypoints.
+        new_2D_keypoints = pts_xform.to_2d(new_3D)
+        current_2D_keypoints = new_2D_keypoints
+        current_3D_points = new_3D
+
+    # ------------------------------
+    # Trajectory Visualization
+    # ------------------------------
+    if render_trajectory:
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        positions = np.array(global_positions)
+        if positions.shape[0] > 0:
+            ax.plot(positions[:, 0], positions[:, 1], positions[:, 2], '-o', color='blue', label="Trajectory")
+            ax.scatter(positions[-1, 0], positions[-1, 1], positions[-1, 2], color='red', s=50, label="Current")
+        ax.set_title(f"Camera Trajectory up to Frame {i + 1}")
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+        ax.legend()
+        traj_plot_path = os.path.join(traj_img_dir, f"traj_{i:06d}.png")
+        plt.savefig(traj_plot_path)
+        plt.close(fig)
+
+    if i % 20 == 0:
+        print(f"Processed {i} / {len(left_files) - 1} frames.")
+
+traj_file.close()
+
+
+# ------------------------------
+# Compose Movie: Original Left Image + Trajectory Visualization
+# ------------------------------
+if compose_movie:
+    print("Composing movie from tracking outputs.")
+    # Define transformation lambdas:
+    # First column: original left image (from dataset_path and left_files)
+    # Second column: trajectory plot from traj_img_dir
+    transformations = [
+        lambda x: os.path.join(dataset_path, x),  # Original left image path.
+        lambda x: os.path.join(traj_img_dir, f"traj_{int(x.split('_')[-1].split('.')[0]):06d}.png"),
+    ]
+    # Use the original left_files list (which contains the file names for left images)
+    make_stacked_video(dataset_path, left_files, "cam_tracking_video.mp4", transformations)
+
+print("Processing complete.")
