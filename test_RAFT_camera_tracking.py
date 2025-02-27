@@ -1,11 +1,14 @@
 import os
 import sys
 import cv2
+import re
+import ast
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D  # for 3D plotting
 
+# Add RAFT-Stereo and RAFT-Flow paths
 raft_stereo_path = os.path.join(os.path.dirname(__file__), "external", "RAFT-Stereo")
 raft_flow_path = os.path.join(os.path.dirname(__file__), "external", "RAFT-Flow")
 sys.path.append(raft_stereo_path)
@@ -37,11 +40,15 @@ yaml_file = "/home/roman/Downloads/fpv_datasets/indoor_forward_calib_snapdragon/
 stereo_checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raftstereo-sceneflow.pth"
 flow_checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-things.pth"
 
-# Multi-frame mode parameters
+# To do
+compute_trajectory = False
+render_images = True
 compose_movie = False
-render_trajectory = True  # if True, we save trajectory plots for each frame
-limit = 300  # Use 0 for no limit
-k = 25  # Reinitialize keypoints every k frames
+
+
+# Parameters.
+limit = 0  # Use 0 for no limit.
+k = 2  # Reinitialize keypoints every k frames.
 
 # Load calibration parameters and initialize rectification.
 params = StereoParamsYAML(yaml_file)
@@ -54,159 +61,263 @@ flow_solver = OpticalFlowRAFT(flow_checkpoint, rectification)
 
 # Initialize keypoint extraction and 3D processing.
 rect_mask = rectification.get_rectification_masks()[0]
-pts_src = UniformKeyPoints(rectification_mask=rect_mask)
+pts_src = UniformKeyPoints(rect_mask)
 pts_xform = Keypoints3DXform(params.get_camera_params(StereoParamsInterface.StereoCamera.LEFT))
-pts_flow = Keypoints3DFlow(params.get_camera_params(StereoParamsInterface.StereoCamera.LEFT), pts_xform, rect_mask)
+pts_flow = Keypoints3DFlow(params.get_camera_params(StereoParamsInterface.StereoCamera.LEFT),
+                           pts_xform, rect_mask)
 
-# The SVD-based implementation.
+# Initialize the camera transformation estimator.
 cam_estimator = CameraSvdXform()
 
-# Output file to record per-frame camera transformation.
+# Prepare file and folder paths.
 traj_txt_path = os.path.join(dataset_path, "camera_trajectory.txt")
-traj_file = open(traj_txt_path, "w")
-traj_file.write("frame, translation, rotation_matrix_flat\n")
-
-# Global camera pose (4x4 homogeneous transformation); start at identity.
-T_global = np.eye(4)
-global_positions = []  # To accumulate camera positions for trajectory visualization.
+traj_img_dir = os.path.join(dataset_path, "out_traj")
+os.makedirs(traj_img_dir, exist_ok=True)
+output_dir = os.path.join(dataset_path, "out_cam_tracking")
+os.makedirs(output_dir, exist_ok=True)
 
 # Read left image filenames.
 left_txt = os.path.join(dataset_path, "left_images.txt")
-df_left = pd.read_csv(left_txt, delim_whitespace=True, comment="#", names=["id", "timestamp", "image_name"])
+df_left = pd.read_csv(left_txt, delim_whitespace=True, comment="#",
+                      names=["id", "timestamp", "image_name"])
 left_files = df_left["image_name"].tolist()
 if limit:
     left_files = left_files[:limit]
 
-# Create folder for trajectory visualization images.
-traj_img_dir = os.path.join(dataset_path, "out_traj")
-os.makedirs(traj_img_dir, exist_ok=True)
-
-# Create folder for the camera tracking outputs.
-output_dir = os.path.join(dataset_path, "out_cam_tracking")
-os.makedirs(output_dir, exist_ok=True)
-
 # ------------------------------
-# Multi-frame Camera Tracking
+# Compute Trajectory and Write to Text File (Optimized with Cache Check)
 # ------------------------------
-print("Starting multi-frame camera tracking...")
+if compute_trajectory:
+    traj_file = open(traj_txt_path, "w")
+    traj_file.write("frame, translation, rotation_matrix_flat\n")
 
-# Variables to hold keypoints from the previous frame.
-current_2D_keypoints = None
-current_3D_points = None
+    T_global = np.eye(4)  # Global camera pose (4x4 homogeneous); start at identity.
+    global_positions = []  # To accumulate camera positions.
 
-# Loop over consecutive frames (assuming left image sequence; stereo is used for depth).
-for i in range(len(left_files) - 1):
-    # Construct full file paths for current and next left images.
-    frame1_path = os.path.join(dataset_path, left_files[i])
-    frame2_path = os.path.join(dataset_path, left_files[i + 1])
+    current_2D_keypoints = None
+    current_3D_points = None
 
-    # Load left images in grayscale.
-    img1 = cv2.imread(frame1_path, cv2.IMREAD_GRAYSCALE)
-    img2 = cv2.imread(frame2_path, cv2.IMREAD_GRAYSCALE)
-    if img1 is None or img2 is None:
-        print(f"Skipping frame index {i} due to missing images.")
-        continue
+    # Cache variables for the "previous" frame results.
+    prev_img_left = None
+    prev_img_right = None
+    prev_depth = None
 
-    # For stereo, load corresponding right images (by replacing "image_0_" with "image_1_").
-    right1_path = frame1_path.replace("image_0_", "image_1_")
-    right2_path = frame2_path.replace("image_0_", "image_1_")
-    img_right1 = cv2.imread(right1_path, cv2.IMREAD_GRAYSCALE)
-    img_right2 = cv2.imread(right2_path, cv2.IMREAD_GRAYSCALE)
-    if img_right1 is None or img_right2 is None:
-        print(f"Skipping frame index {i} due to missing right images.")
-        continue
+    print("Computing trajectory over frames...")
+    for i in range(len(left_files) - 1):
+        # For the first iteration, prev_depth will be None.
+        if prev_depth is None:
+            frame1_path = os.path.join(dataset_path, left_files[i])
+            frame2_path = os.path.join(dataset_path, left_files[i + 1])
+            img1 = cv2.imread(frame1_path, cv2.IMREAD_GRAYSCALE)
+            img2 = cv2.imread(frame2_path, cv2.IMREAD_GRAYSCALE)
+            if img1 is None or img2 is None:
+                print(f"Skipping frame {i} due to missing images.")
+                continue
 
-    # Compute disparity and depth for frames i and i+1.
-    disp1 = disparity_solver.compute_disparity(img1, img_right1)
-    depth1 = depth_solver.compute_depth(disp1)
-    disp2 = disparity_solver.compute_disparity(img2, img_right2)
-    depth2 = depth_solver.compute_depth(disp2)
+            right1_path = frame1_path.replace("image_0_", "image_1_")
+            right2_path = frame2_path.replace("image_0_", "image_1_")
+            img_right1 = cv2.imread(right1_path, cv2.IMREAD_GRAYSCALE)
+            img_right2 = cv2.imread(right2_path, cv2.IMREAD_GRAYSCALE)
+            if img_right1 is None or img_right2 is None:
+                print(f"Skipping frame {i} due to missing right images.")
+                continue
 
-    # Compute optical flow from frame i to i+1.
-    flow_uv = flow_solver.compute_flow(img1, img2)
+            # Compute disparity and depth for both frames.
+            disp1 = disparity_solver.compute_disparity(img1, img_right1)
+            depth1 = depth_solver.compute_depth(disp1)
+            disp2 = disparity_solver.compute_disparity(img2, img_right2)
+            depth2 = depth_solver.compute_depth(disp2)
+            # Compute optical flow from img1 to img2.
+            flow_uv = flow_solver.compute_flow(img1, img2)
 
-    # Reinitialize keypoints every k frames or if no keypoints exist yet.
-    if i % k == 0 or current_2D_keypoints is None:
-        new_keypoints_2D = pts_src.get_keypoints(img1, max_number=200)
-        all_3D = pts_xform.to_3d(new_keypoints_2D, depth1)
-        valid_mask = all_3D[:, 2] > 0  # Keep points with positive depth.
-        current_2D_keypoints = new_keypoints_2D[valid_mask]
-        current_3D_points = all_3D[valid_mask]
-    else:
-        # Compute new 3D keypoints for frame i+1 using optical flow.
-        new_3D_points, valid_mask = pts_flow.compute_3d_flow(current_2D_keypoints, depth1, depth2, flow_uv)
-        # If too few points remain, reinitialize.
-        if new_3D_points.shape[0] < 4:
+            # Cache the second frame's data for the next iteration.
+            prev_img_left = img2
+            prev_img_right = img_right2
+            prev_depth = depth2
+        else:
+            # For subsequent iterations, use cached previous frame.
+            img1 = prev_img_left
+            depth1 = prev_depth
+
+            # Load new current frame (frame i+1).
+            frame2_path = os.path.join(dataset_path, left_files[i + 1])
+            img2 = cv2.imread(frame2_path, cv2.IMREAD_GRAYSCALE)
+            if img2 is None:
+                print(f"Skipping frame {i} due to missing image for frame {i+1}.")
+                continue
+            right2_path = frame2_path.replace("image_0_", "image_1_")
+            img_right2 = cv2.imread(right2_path, cv2.IMREAD_GRAYSCALE)
+            if img_right2 is None:
+                print(f"Skipping frame {i} due to missing right image for frame {i+1}.")
+                continue
+
+            # Compute disparity and depth for the new current frame.
+            disp2 = disparity_solver.compute_disparity(img2, img_right2)
+            depth2 = depth_solver.compute_depth(disp2)
+            # Compute optical flow from the cached frame to the new frame.
+            flow_uv = flow_solver.compute_flow(img1, img2)
+
+            # Update the cache.
+            prev_img_left = img2
+            prev_img_right = img_right2
+            prev_depth = depth2
+
+        # Keypoint reinitialization/tracking.
+        if i % k == 0 or current_2D_keypoints is None:
             new_keypoints_2D = pts_src.get_keypoints(img1, max_number=200)
             all_3D = pts_xform.to_3d(new_keypoints_2D, depth1)
             valid_mask = all_3D[:, 2] > 0
             current_2D_keypoints = new_keypoints_2D[valid_mask]
             current_3D_points = all_3D[valid_mask]
-            continue
+        else:
+            new_3D_points, valid_mask = pts_flow.compute_3d_flow(current_2D_keypoints, depth1, depth2, flow_uv)
+            if new_3D_points.shape[0] < 4:
+                new_keypoints_2D = pts_src.get_keypoints(img1, max_number=200)
+                all_3D = pts_xform.to_3d(new_keypoints_2D, depth1)
+                valid_mask = all_3D[:, 2] > 0
+                current_2D_keypoints = new_keypoints_2D[valid_mask]
+                current_3D_points = all_3D[valid_mask]
+                continue
 
-        old_3D = current_3D_points[valid_mask]
-        new_3D = new_3D_points[valid_mask]
+            old_3D = current_3D_points[valid_mask]
+            new_3D = new_3D_points[valid_mask]
 
-        # Estimate the relative transformation from frame i to i+1.
-        R_rel, t_rel = cam_estimator.compute_camera_xform(old_3D, new_3D)
-        T_rel = np.eye(4)
-        T_rel[:3, :3] = R_rel
-        T_rel[:3, 3] = t_rel
+            R_rel, t_rel = cam_estimator.compute_camera_xform(old_3D, new_3D)
+            T_rel = np.eye(4)
+            T_rel[:3, :3] = R_rel
+            T_rel[:3, 3] = t_rel
+            T_global = T_global @ T_rel  # Update global pose.
 
-        # Update the global camera pose incrementally.
-        T_global = T_global @ T_rel
+            R_flat = R_rel.flatten()
+            traj_file.write(f"{i}, {t_rel.tolist()}, {R_flat.tolist()}\n")
 
-        # Write the current frame's transformation to file.
-        R_flat = R_rel.flatten()
-        traj_file.write(f"{i}, {t_rel.tolist()}, {R_flat.tolist()}\n")
+            cam_pos = T_global[:3, 3]
+            global_positions.append(cam_pos)
 
-        # Extract the camera position from the global pose.
-        cam_pos = T_global[:3, 3]
-        global_positions.append(cam_pos)
+            new_2D_keypoints = pts_xform.to_2d(new_3D)
+            current_2D_keypoints = new_2D_keypoints
+            current_3D_points = new_3D
 
-        # Reproject new 3D points to 2D for updating keypoints.
-        new_2D_keypoints = pts_xform.to_2d(new_3D)
-        current_2D_keypoints = new_2D_keypoints
-        current_3D_points = new_3D
+        if i % 20 == 0:
+            print(f"Processed {i} / {len(left_files) - 1} frames.")
 
-    # ------------------------------
-    # Trajectory Visualization
-    # ------------------------------
-    if render_trajectory:
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        positions = np.array(global_positions)
-        if positions.shape[0] > 0:
-            ax.plot(positions[:, 0], positions[:, 1], positions[:, 2], '-o', color='blue', label="Trajectory")
-            ax.scatter(positions[-1, 0], positions[-1, 1], positions[-1, 2], color='red', s=50, label="Current")
-        ax.set_title(f"Camera Trajectory up to Frame {i + 1}")
-        ax.set_xlabel("X")
-        ax.set_ylabel("Y")
-        ax.set_zlabel("Z")
-        ax.legend()
-        traj_plot_path = os.path.join(traj_img_dir, f"traj_{i:06d}.png")
-        plt.savefig(traj_plot_path)
-        plt.close(fig)
-
-    if i % 20 == 0:
-        print(f"Processed {i} / {len(left_files) - 1} frames.")
-
-traj_file.close()
+    traj_file.close()
+    print("Trajectory computation complete. Data written to:", traj_txt_path)
 
 
+# ------------------------------
+# Render Trajectory Images with Fixed Scale
+# ------------------------------
+if render_images:
+
+    # Customization parameters.
+    show_axis = False  # If False, tick labels will be hidden.
+    small_font_size = 8  # Use a smaller font size.
+    zoom_distance = 5  # Lower value zooms in (default is typically around 10).
+    elevation = 45  # Tilt up: higher elevation angle (in degrees).
+    azimuth = -45  # Azimuth angle (in degrees).
+
+    # Initialize the global transformation as identity (no rotation, no translation)
+    T_global = np.eye(4)
+    global_positions = []
+
+    print("Computing trajectory")
+    with open(traj_txt_path, 'r') as f:
+        header = f.readline()  # Skip the header line.
+        for line in f:
+            # Use regex to extract both bracketed lists from the line.
+            matches = re.findall(r'\[.*?\]', line)
+            if len(matches) >= 2:
+                # The first list is the translation vector.
+                translation = ast.literal_eval(matches[0])
+                # The second list is the flattened rotation matrix.
+                rotation_flat = ast.literal_eval(matches[1])
+                # Reshape the flattened list into a 3x3 matrix.
+                R_rel = np.array(rotation_flat).reshape(3, 3)
+                t_rel = np.array(translation)
+
+                # Create the relative transformation matrix (4x4 homogeneous).
+                T_rel = np.eye(4)
+                T_rel[:3, :3] = R_rel
+                T_rel[:3, 3] = t_rel
+
+                # Update the global transformation: T_global = T_global * T_rel.
+                T_global = T_global @ T_rel
+
+                # Extract and store the camera position (translation part) from T_global.
+                global_positions.append(T_global[:3, 3].copy())
+
+
+
+    # Convert the list of global positions into a NumPy array.
+    global_positions_array = np.array(global_positions)
+    if global_positions_array.shape[0] > 0:
+        # Compute overall extents (fixed axis limits) from the entire trajectory.
+        min_vals = global_positions_array.min(axis=0)
+        max_vals = global_positions_array.max(axis=0)
+
+        print("Rendering trajectory images with fixed scale...")
+        # For each frame, render the trajectory up to that frame.
+        for idx in range(len(global_positions_array)):
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+
+            # Plot the trajectory from the start up to the current frame as a blue line.
+            traj_to_current = global_positions_array[:idx + 1]
+            ax.plot(traj_to_current[:, 0], traj_to_current[:, 1], traj_to_current[:, 2],
+                    '-', color='blue')
+
+            # Draw the start location as a green dot.
+            ax.scatter(traj_to_current[0, 0], traj_to_current[0, 1], traj_to_current[0, 2],
+                       color='green', s=50)
+
+            # Draw the current location as a red dot.
+            ax.scatter(traj_to_current[-1, 0], traj_to_current[-1, 1], traj_to_current[-1, 2],
+                       color='red', s=50)
+
+            # Set fixed axis limits based on overall extents.
+            ax.set_xlim(min_vals[0], max_vals[0])
+            ax.set_ylim(min_vals[1], max_vals[1])
+            ax.set_zlim(min_vals[2], max_vals[2])
+
+            # Set axis labels with a smaller font size.
+            ax.set_xlabel("X", fontsize=small_font_size)
+            ax.set_ylabel("Y", fontsize=small_font_size)
+            ax.set_zlabel("Z", fontsize=small_font_size)
+            ax.tick_params(labelsize=small_font_size)
+
+            # Optionally hide the tick labels.
+            if not show_axis:
+                ax.set_xticklabels([])
+                ax.set_yticklabels([])
+                ax.set_zticklabels([])
+
+            # Adjust the view: zoom in and tilt the camera.
+            ax.view_init(elev=elevation, azim=azimuth)
+            ax.dist = zoom_distance
+
+            # Save the plot.
+            plot_path = os.path.join(traj_img_dir, f"traj_{idx:06d}.png")
+            plt.savefig(plot_path)
+            plt.close(fig)
+
+            if idx % 20 == 0:
+                print(f"Rendered trajectory image for frame {idx + 1} / {len(global_positions_array)}")
+    else:
+        print("No global positions available for trajectory rendering.")
 # ------------------------------
 # Compose Movie: Original Left Image + Trajectory Visualization
 # ------------------------------
 if compose_movie:
     print("Composing movie from tracking outputs.")
     # Define transformation lambdas:
-    # First column: original left image (from dataset_path and left_files)
-    # Second column: trajectory plot from traj_img_dir
+    # First column: original left image (using dataset_path and the file name from left_files)
+    # Second column: trajectory plot from traj_img_dir.
     transformations = [
         lambda x: os.path.join(dataset_path, x),  # Original left image path.
         lambda x: os.path.join(traj_img_dir, f"traj_{int(x.split('_')[-1].split('.')[0]):06d}.png"),
     ]
-    # Use the original left_files list (which contains the file names for left images)
     make_stacked_video(dataset_path, left_files, "cam_tracking_video.mp4", transformations)
+    print("Movie composed as cam_tracking_video.mp4")
 
 print("Processing complete.")
