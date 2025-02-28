@@ -3,6 +3,7 @@ import sys
 import cv2
 import re
 import ast
+import itertools
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -45,10 +46,9 @@ compute_trajectory = False
 render_images = True
 compose_movie = False
 
-
 # Parameters.
 limit = 0  # Use 0 for no limit.
-k = 2  # Reinitialize keypoints every k frames.
+
 
 # Load calibration parameters and initialize rectification.
 params = StereoParamsYAML(yaml_file)
@@ -92,10 +92,7 @@ if compute_trajectory:
     traj_file.write("frame, translation, rotation_matrix_flat\n")
 
     T_global = np.eye(4)  # Global camera pose (4x4 homogeneous); start at identity.
-    global_positions = []  # To accumulate camera positions.
 
-    current_2D_keypoints = None
-    current_3D_points = None
 
     # Cache variables for the "previous" frame results.
     prev_img_left = None
@@ -163,40 +160,32 @@ if compute_trajectory:
             prev_depth = depth2
 
         # Keypoint reinitialization/tracking.
-        if i % k == 0 or current_2D_keypoints is None:
-            new_keypoints_2D = pts_src.get_keypoints(img1, max_number=200)
-            all_3D = pts_xform.to_3d(new_keypoints_2D, depth1)
-            valid_mask = all_3D[:, 2] > 0
-            current_2D_keypoints = new_keypoints_2D[valid_mask]
-            current_3D_points = all_3D[valid_mask]
-        else:
-            new_3D_points, valid_mask = pts_flow.compute_3d_flow(current_2D_keypoints, depth1, depth2, flow_uv)
-            if new_3D_points.shape[0] < 4:
-                new_keypoints_2D = pts_src.get_keypoints(img1, max_number=200)
-                all_3D = pts_xform.to_3d(new_keypoints_2D, depth1)
-                valid_mask = all_3D[:, 2] > 0
-                current_2D_keypoints = new_keypoints_2D[valid_mask]
-                current_3D_points = all_3D[valid_mask]
-                continue
+        keypoints_2D = pts_src.get_keypoints(img1, max_number=200)
+        keypoints_3D_1 = pts_xform.to_3d(keypoints_2D, depth1)
 
-            old_3D = current_3D_points[valid_mask]
-            new_3D = new_3D_points[valid_mask]
+        keypoints_3D_2, valid_mask = pts_flow.compute_3d_flow(keypoints_2D, depth1, depth2, flow_uv)
 
-            R_rel, t_rel = cam_estimator.compute_camera_xform(old_3D, new_3D)
-            T_rel = np.eye(4)
-            T_rel[:3, :3] = R_rel
-            T_rel[:3, 3] = t_rel
-            T_global = T_global @ T_rel  # Update global pose.
+        # Check if we have enough valid keypoints.
+        if keypoints_3D_2.shape[0] < 4:
+            print("Too few valid keypoints; skipping transformation update.")
+            continue
 
-            R_flat = R_rel.flatten()
-            traj_file.write(f"{i}, {t_rel.tolist()}, {R_flat.tolist()}\n")
+        # Filter the keypoints using the valid mask.
+        old_3D = keypoints_3D_1[valid_mask]
+        new_3D = keypoints_3D_2[valid_mask]
 
-            cam_pos = T_global[:3, 3]
-            global_positions.append(cam_pos)
+        # Compute the relative transformation (rotation and translation) that maps old_3D to new_3D.
+        R_rel, t_rel = cam_estimator.compute_camera_xform(old_3D, new_3D)
+        T_rel = np.eye(4)
+        T_rel[:3, :3] = R_rel
+        T_rel[:3, 3] = t_rel
 
-            new_2D_keypoints = pts_xform.to_2d(new_3D)
-            current_2D_keypoints = new_2D_keypoints
-            current_3D_points = new_3D
+        # Update the global camera pose.
+        T_global = T_global @ T_rel
+
+        # Write the current frame's transformation to file.
+        R_flat = R_rel.flatten()
+        traj_file.write(f"{i}, {t_rel.tolist()}, {R_flat.tolist()}\n")
 
         if i % 20 == 0:
             print(f"Processed {i} / {len(left_files) - 1} frames.")
@@ -214,17 +203,25 @@ if render_images:
     show_axis = False  # If False, tick labels will be hidden.
     small_font_size = 8  # Use a smaller font size.
     zoom_distance = 5  # Lower value zooms in (default is typically around 10).
+
+
     elevation = 45  # Tilt up: higher elevation angle (in degrees).
     azimuth = -45  # Azimuth angle (in degrees).
+
+    # For top view
+    # elevation = 90
+    # azimuth = -90
 
     # Initialize the global transformation as identity (no rotation, no translation)
     T_global = np.eye(4)
     global_positions = []
 
-    print("Computing trajectory")
+    print("Rendering images")
     with open(traj_txt_path, 'r') as f:
         header = f.readline()  # Skip the header line.
-        for line in f:
+
+        lines = itertools.islice(f, limit) if limit and limit > 0 else f
+        for line in lines:
             # Use regex to extract both bracketed lists from the line.
             matches = re.findall(r'\[.*?\]', line)
             if len(matches) >= 2:
@@ -248,13 +245,25 @@ if render_images:
                 global_positions.append(T_global[:3, 3].copy())
 
 
-
     # Convert the list of global positions into a NumPy array.
     global_positions_array = np.array(global_positions)
     if global_positions_array.shape[0] > 0:
+
         # Compute overall extents (fixed axis limits) from the entire trajectory.
         min_vals = global_positions_array.min(axis=0)
         max_vals = global_positions_array.max(axis=0)
+        # Compute ranges for each axis.
+        x_range = max_vals[0] - min_vals[0]
+        y_range = max_vals[1] - min_vals[1]
+        z_range = max_vals[2] - min_vals[2]
+        max_range = max(x_range, y_range, z_range)
+
+        # Compute new limits centered around the midpoint.
+        x_mid = (max_vals[0] + min_vals[0]) / 2
+        y_mid = (max_vals[1] + min_vals[1]) / 2
+        z_mid = (max_vals[2] + min_vals[2]) / 2
+
+
 
         print("Rendering trajectory images with fixed scale...")
         # For each frame, render the trajectory up to that frame.
@@ -276,9 +285,13 @@ if render_images:
                        color='red', s=50)
 
             # Set fixed axis limits based on overall extents.
-            ax.set_xlim(min_vals[0], max_vals[0])
-            ax.set_ylim(min_vals[1], max_vals[1])
-            ax.set_zlim(min_vals[2], max_vals[2])
+            # ax.set_xlim(min_vals[0], max_vals[0])
+            # ax.set_ylim(min_vals[1], max_vals[1])
+            # ax.set_zlim(min_vals[2], max_vals[2])
+
+            ax.set_xlim(x_mid - max_range / 2, x_mid + max_range / 2)
+            ax.set_ylim(y_mid - max_range / 2, y_mid + max_range / 2)
+            ax.set_zlim(z_mid - max_range / 2, z_mid + max_range / 2)
 
             # Set axis labels with a smaller font size.
             ax.set_xlabel("X", fontsize=small_font_size)
