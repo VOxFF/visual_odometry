@@ -43,6 +43,15 @@ class StereoParamsInterface(ABC):
         """ Return the stereo camera baseline. """
         pass
 
+    @abstractmethod
+    def get_z_max(self, d_min=1.0):
+        """
+        Return the maximum depth (Z_max) for which the disparity measurement is beneficial/reliable.
+        Typically, Z_max is computed as (f_avg * baseline) / d_min,
+        where d_min is the minimal measurable disparity.
+        """
+        pass
+
 
 class StereoRectificationInterface(ABC):
     """ Abstract interface for stereo rectification. """

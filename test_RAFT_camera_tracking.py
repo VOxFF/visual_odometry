@@ -42,12 +42,15 @@ stereo_checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raft
 flow_checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-things.pth"
 
 # To do
-compute_trajectory = False
+compute_trajectory = True
 render_images = True
-compose_movie = False
+compose_movie = True
 
 # Parameters.
 limit = 0  # Use 0 for no limit.
+
+min_depth = 0.0  # meters
+max_depth = 20.0  # meters
 
 
 # Load calibration parameters and initialize rectification.
@@ -60,11 +63,13 @@ depth_solver = StereoDepth(params)
 flow_solver = OpticalFlowRAFT(flow_checkpoint, rectification)
 
 # Initialize keypoint extraction and 3D processing.
-rect_mask = rectification.get_rectification_masks()[0]
-pts_src = UniformKeyPoints(rect_mask)
+# Retrieve the rectification masks (assuming they have been computed already)
+stereo_mask, left_mask, right_mask, roi_mask = rectification.get_rectification_masks()
+pts_src = UniformKeyPoints(stereo_mask)
 pts_xform = Keypoints3DXform(params.get_camera_params(StereoParamsInterface.StereoCamera.LEFT))
 pts_flow = Keypoints3DFlow(params.get_camera_params(StereoParamsInterface.StereoCamera.LEFT),
-                           pts_xform, rect_mask)
+                           pts_xform, stereo_mask)
+
 
 # Initialize the camera transformation estimator.
 cam_estimator = CameraSvdXform()
@@ -160,10 +165,18 @@ if compute_trajectory:
             prev_depth = depth2
 
         # Keypoint reinitialization/tracking.
-        keypoints_2D = pts_src.get_keypoints(img1, max_number=200)
+        keypoints_2D = pts_src.get_keypoints(img1, max_number=280)
         keypoints_3D_1 = pts_xform.to_3d(keypoints_2D, depth1)
 
+        # Let's try to limit the range
+        valid_depth_mask = (keypoints_3D_1[:, 2] >= min_depth) & (keypoints_3D_1[:, 2] <= max_depth)
+        keypoints_3D_1 = keypoints_3D_1[valid_depth_mask]
+        keypoints_2D = keypoints_2D[valid_depth_mask]
+        print(f"keypoints = {len(keypoints_2D)}")
+
         keypoints_3D_2, valid_mask = pts_flow.compute_3d_flow(keypoints_2D, depth1, depth2, flow_uv)
+
+
 
         # Check if we have enough valid keypoints.
         if keypoints_3D_2.shape[0] < 4:
@@ -331,6 +344,6 @@ if compose_movie:
         lambda x: os.path.join(traj_img_dir, f"traj_{int(x.split('_')[-1].split('.')[0]):06d}.png"),
     ]
     make_stacked_video(dataset_path, left_files, "cam_tracking_video.mp4", transformations)
-    print("Movie composed as cam_tracking_video.mp4")
+    print(f"Movie composed as {dataset_path}/cam_tracking_video.mp4")
 
 print("Processing complete.")

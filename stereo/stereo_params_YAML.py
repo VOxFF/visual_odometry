@@ -114,3 +114,20 @@ class StereoParamsYAML(StereoParamsInterface):
             return CameraParameters(self.K_r, self.D_r, self.resolution)
         else:
             raise ValueError(f"Invalid camera side: {camera}")
+
+    def get_z_max(self, d_min=1.0):
+        """
+        Return the maximum depth (Z_max) for which disparity measurement is beneficial.
+
+        Assumes that a disparity below d_min (in pixels) is not reliable.
+        Uses the formula:
+            Z_max = (f_avg * baseline) / d_min
+        where f_avg is the average focal length in pixels and baseline is the stereo baseline in meters.
+
+        Args:
+            d_min (float): Minimal measurable disparity in pixels (default is 1.0).
+
+        Returns:
+            float: The maximum reliable depth (in meters).
+        """
+        return self.focal_length_px * self.baseline / d_min
