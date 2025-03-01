@@ -5,6 +5,7 @@ class CameraSvdXform(CameraXformInterface):
     """
     Concrete implementation of CameraXformInterface using an SVD-based method (Kabsch algorithm)
     to compute the rigid camera transformation between two sets of 3D points.
+    Results are in camera space.
     """
 
     def compute_camera_xform(self, P: np.ndarray, Q: np.ndarray) -> (np.ndarray, np.ndarray):

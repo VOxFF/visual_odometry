@@ -29,6 +29,7 @@ from keypoints.keypoints_3d import Keypoints3DXform
 from keypoints.keypoints_3d_flow import Keypoints3DFlow
 from camera.camera_svd_xform import CameraSvdXform
 from utilities.video_composition import make_stacked_video
+from utilities.plot_3d import TrajectoryPlot
 
 # ------------------------------
 # Configuration and Initialization
@@ -215,32 +216,30 @@ if render_images:
     # Customization parameters.
     show_axis = False  # If False, tick labels will be hidden.
     small_font_size = 8  # Use a smaller font size.
-    zoom_distance = 5  # Lower value zooms in (default is typically around 10).
+    zoom_distance = 5    # Lower value zooms in (default is typically around 10).
 
+    # elevation = 0        # For left view
+    # azimuth = 90
 
-    #elevation = 45  # Tilt up: higher elevation angle (in degrees).
-    #azimuth = -45  # Azimuth angle (in degrees).
+    elevation = 90         # For top view
+    azimuth = 0
 
-    # For top view
-    # elevation = 90
-    # azimuth = -90
+    # elevation = 45  # Regular view
+    # azimuth = -45
 
-    # For right view
-    # elevation = 0
-    # azimuth = -90
-
-    # Left view
-    elevation = 0
-    azimuth = 90
 
     # Initialize the global transformation as identity (no rotation, no translation)
     T_global = np.eye(4)
-    global_positions = []
+    global_positions = []   # to store camera positions
+    global_Ts = []          # to store full 4x4 transformation matrices
+    # matrix for z/z swap  [x, y, z] into [x, z, –y].
+    M = np.array([[1, 0, 0],
+                  [0, 0, 1],
+                  [0, -1, 0]])
 
     print("Rendering images")
     with open(traj_txt_path, 'r') as f:
         header = f.readline()  # Skip the header line.
-
         lines = itertools.islice(f, limit) if limit and limit > 0 else f
         for line in lines:
             # Use regex to extract both bracketed lists from the line.
@@ -262,84 +261,42 @@ if render_images:
                 # Update the global transformation: T_global = T_global * T_rel.
                 T_global = T_global @ T_rel
 
-                # Extract and store the camera position (translation part) from T_global.
-                global_positions.append(T_global[:3, 3].copy())
+                cam_pos = T_global[:3, 3].copy()
+                R_cam = T_global[:3, :3]
+                world_pos = M @ cam_pos
+                R_world = M @ R_cam @ M.T
 
+                T_world = np.eye(4)
+                T_world[:3, :3] = R_world
+                T_world[:3, 3] = world_pos
+
+                global_positions.append(world_pos)
+                global_Ts.append(T_world)
 
     # Convert the list of global positions into a NumPy array.
     global_positions_array = np.array(global_positions)
     if global_positions_array.shape[0] > 0:
-
-        # Compute overall extents (fixed axis limits) from the entire trajectory.
-        min_vals = global_positions_array.min(axis=0)
-        max_vals = global_positions_array.max(axis=0)
-        # Compute ranges for each axis.
-        expand_view = 2
-        x_range = max_vals[0] - min_vals[0] + expand_view
-        y_range = max_vals[1] - min_vals[1] + expand_view
-        z_range = max_vals[2] - min_vals[2] + expand_view
-        max_range = max(x_range, y_range, z_range)
-
-        # Compute new limits centered around the midpoint.
-        x_mid = (max_vals[0] + min_vals[0]) / 2
-        y_mid = (max_vals[1] + min_vals[1]) / 2
-        z_mid = (max_vals[2] + min_vals[2]) / 2
-
-
-
         print("Rendering trajectory images with fixed scale...")
-        # For each frame, render the trajectory up to that frame.
+
+        # Create an instance of your TrajectoryPlot class.
+        # (Assuming TrajectoryPlot is defined in utilities/plot_3d.py.)
+        from utilities.plot_3d import TrajectoryPlot
+        tp = TrajectoryPlot(global_positions_array, elevation=elevation, azimuth=azimuth,
+                              zoom_distance=zoom_distance, small_font_size=small_font_size)
+
+        # For each frame, render the trajectory up to that frame using its full transformation.
         for idx in range(len(global_positions_array)):
-            fig = plt.figure()
-            ax = fig.add_subplot(111, projection='3d')
-
-            # Plot the trajectory from the start up to the current frame as a blue line.
-            traj_to_current = global_positions_array[:idx + 1]
-            ax.plot(traj_to_current[:, 0], traj_to_current[:, 1], traj_to_current[:, 2],
-                    '-', color='blue')
-
-            # Draw the start location as a green dot.
-            ax.scatter(traj_to_current[0, 0], traj_to_current[0, 1], traj_to_current[0, 2],
-                       color='green', s=50)
-
-            # Draw the current location as a red dot.
-            ax.scatter(traj_to_current[-1, 0], traj_to_current[-1, 1], traj_to_current[-1, 2],
-                       color='red', s=50)
-
-            # Set fixed axis limits based on overall extents.
-            # ax.set_xlim(min_vals[0], max_vals[0])
-            # ax.set_ylim(min_vals[1], max_vals[1])
-            # ax.set_zlim(min_vals[2], max_vals[2])
-
-            ax.set_xlim(x_mid - max_range / 2, x_mid + max_range / 2)
-            ax.set_ylim(y_mid - max_range / 2, y_mid + max_range / 2)
-            ax.set_zlim(z_mid - max_range / 2, z_mid + max_range / 2)
-
-            # Set axis labels with a smaller font size.
-            ax.set_xlabel("X", fontsize=small_font_size)
-            ax.set_ylabel("Y", fontsize=small_font_size)
-            ax.set_zlabel("Z", fontsize=small_font_size)
-            ax.tick_params(labelsize=small_font_size)
-
-            # Optionally hide the tick labels.
-            if not show_axis:
-                ax.set_xticklabels([])
-                ax.set_yticklabels([])
-                ax.set_zticklabels([])
-
-            # Adjust the view: zoom in and tilt the camera.
-            ax.view_init(elev=elevation, azim=azimuth)
-            ax.dist = zoom_distance
-
-            # Save the plot.
+            current_T = global_Ts[idx]  # Use the transformation for the current frame.
+            fig = tp.plot(current_T, idx)
             plot_path = os.path.join(traj_img_dir, f"traj_{idx:06d}.png")
-            plt.savefig(plot_path)
+            fig.savefig(plot_path)
             plt.close(fig)
 
             if idx % 20 == 0:
                 print(f"Rendered trajectory image for frame {idx + 1} / {len(global_positions_array)}")
     else:
         print("No global positions available for trajectory rendering.")
+
 # ------------------------------
 # Compose Movie: Original Left Image + Trajectory Visualization
 # ------------------------------
