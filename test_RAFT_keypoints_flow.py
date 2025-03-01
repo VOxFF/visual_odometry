@@ -42,7 +42,7 @@ single_frame = True
 img_idx = 600
 #img_idx = 1200
 #img_idx = 2000
-#img_idx = 2800
+img_idx = 2800
 
 ghosting = False
 

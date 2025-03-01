@@ -85,7 +85,7 @@ class DisparityRAFT(StereoDisparityInterface):
             flow_up = padder.unpad(flow_up).squeeze()
 
         self.flow = flow_up  # Store for next frame propagation
-        return -flow_up.cpu().numpy().squeeze()
+        return flow_up.cpu().numpy().squeeze()
 
     def _loadImage(self, image_param):
         """Converts input image (file path or NumPy array) to the required format for RAFT-Stereo."""

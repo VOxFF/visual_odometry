@@ -42,7 +42,7 @@ stereo_checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raft
 flow_checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-things.pth"
 
 # To do
-compute_trajectory = True
+compute_trajectory = False
 render_images = True
 compose_movie = True
 
@@ -50,7 +50,7 @@ compose_movie = True
 limit = 0  # Use 0 for no limit.
 
 min_depth = 0.0  # meters
-max_depth = 20.0  # meters
+max_depth = 15.0  # meters
 
 
 # Load calibration parameters and initialize rectification.
@@ -218,12 +218,20 @@ if render_images:
     zoom_distance = 5  # Lower value zooms in (default is typically around 10).
 
 
-    elevation = 45  # Tilt up: higher elevation angle (in degrees).
-    azimuth = -45  # Azimuth angle (in degrees).
+    #elevation = 45  # Tilt up: higher elevation angle (in degrees).
+    #azimuth = -45  # Azimuth angle (in degrees).
 
     # For top view
     # elevation = 90
     # azimuth = -90
+
+    # For right view
+    # elevation = 0
+    # azimuth = -90
+
+    # Left view
+    elevation = 0
+    azimuth = 90
 
     # Initialize the global transformation as identity (no rotation, no translation)
     T_global = np.eye(4)
@@ -266,9 +274,10 @@ if render_images:
         min_vals = global_positions_array.min(axis=0)
         max_vals = global_positions_array.max(axis=0)
         # Compute ranges for each axis.
-        x_range = max_vals[0] - min_vals[0]
-        y_range = max_vals[1] - min_vals[1]
-        z_range = max_vals[2] - min_vals[2]
+        expand_view = 2
+        x_range = max_vals[0] - min_vals[0] + expand_view
+        y_range = max_vals[1] - min_vals[1] + expand_view
+        z_range = max_vals[2] - min_vals[2] + expand_view
         max_range = max(x_range, y_range, z_range)
 
         # Compute new limits centered around the midpoint.

@@ -38,12 +38,12 @@ class StereoDepth:
             raise ValueError("Disparity map is None.")
 
         # Create a mask where disparity is valid (greater than zero)
-        valid = disparity > 0
+        valid = np.abs(disparity) > 0
 
         # Initialize depth map
         depth = np.zeros_like(disparity, dtype=np.float32)
 
         # Compute depth only where disparity is valid
-        depth[valid] = (self.fx * self.baseline) / disparity[valid]
+        depth[valid] = (self.fx * self.baseline) / abs(disparity[valid])
 
         return depth
