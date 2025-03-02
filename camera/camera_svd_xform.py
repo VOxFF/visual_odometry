@@ -5,8 +5,15 @@ class CameraSvdXform(CameraXformInterface):
     """
     Concrete implementation of CameraXformInterface using an SVD-based method (Kabsch algorithm)
     to compute the rigid camera transformation between two sets of 3D points.
-    Results are in camera space.
+    The results are in camera space, then adjusted to the drone (or IMU) center using a provided offset.
     """
+    def __init__(self, offset=np.array([0.0, 0.0, 0.0])):
+        """
+        Args:
+            offset (np.ndarray): A 3-element vector representing the camera's offset
+                                 (in the camera coordinate system) relative to the drone's center.
+        """
+        self.offset = np.array(offset)
 
     def compute_camera_xform(self, P: np.ndarray, Q: np.ndarray) -> (np.ndarray, np.ndarray):
         # Compute centroids of both point sets.
@@ -31,7 +38,11 @@ class CameraSvdXform(CameraXformInterface):
             Vt[2, :] *= -1
             R = Vt.T @ U.T
 
-        # Compute the translation vector.
+        # Compute the translation vector in camera space.
         t = centroid_Q - R @ centroid_P
 
-        return R, t
+        # Adjust translation for the known camera offset.
+        # This converts the camera pose into the drone/IMU center pose.
+        t_corrected = t + R @ self.offset
+
+        return R, t_corrected

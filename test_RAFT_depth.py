@@ -19,12 +19,12 @@ from utilities.video_composition import make_stacked_video
 
 
 # Outdoor dataset
-dataset_path = "/home/roman/Downloads/fpv_datasets/outdoor_forward_1_snapdragon_with_gt/"
-yaml_file = "/home/roman/Downloads/fpv_datasets/outdoor_forward_calib_snapdragon/camchain-imucam-outdoor_forward_calib_snapdragon_imu.yaml"
+#dataset_path = "/home/roman/Downloads/fpv_datasets/outdoor_forward_1_snapdragon_with_gt/"
+#yaml_file = "/home/roman/Downloads/fpv_datasets/outdoor_forward_calib_snapdragon/camchain-imucam-outdoor_forward_calib_snapdragon_imu.yaml"
 
 # Indoor dataset
-#dataset_path = "/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/"
-#yaml_file = "/home/roman/Downloads/fpv_datasets/indoor_forward_calib_snapdragon/indoor_forward_calib_snapdragon_imu.yaml"
+dataset_path = "/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/"
+yaml_file = "/home/roman/Downloads/fpv_datasets/indoor_forward_calib_snapdragon/indoor_forward_calib_snapdragon_imu.yaml"
 
 checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raftstereo-sceneflow.pth"
 
@@ -58,9 +58,10 @@ limit = 0  # Set to None for full dataset
 # **Single Frame Mode**
 if single_frame:
     # img_idx = 2800
-    img_idx = 2100
+    #img_idx = 2100
     #img_idx = 1200
     #img_idx = 600
+    img_idx = 400
     left_file = dataset_path + f"img/image_0_{img_idx}.png"
     right_file = dataset_path + f"img/image_1_{img_idx}.png"
 

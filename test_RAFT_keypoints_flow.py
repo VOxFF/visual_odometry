@@ -39,10 +39,12 @@ single_frame = True
 
 # Single frame params
 #img_idx = 50
-img_idx = 600
+img_idx = 400
+#img_idx = 401
+#img_idx = 600
 #img_idx = 1200
 #img_idx = 2000
-img_idx = 2800
+#img_idx = 2800
 
 ghosting = False
 
@@ -78,33 +80,35 @@ print(f"Maximal detectable z={params.get_z_max()}")
 
 # **Single Frame Mode**
 if single_frame:
-    frame1 = dataset_path + f"img/image_0_{img_idx}.png"
-    frame2 = dataset_path + f"img/image_0_{img_idx+1}.png"
-    right_img = dataset_path + f"img/image_1_{img_idx}.png"
+    f1_left = dataset_path + f"img/image_0_{img_idx}.png"
+    f2_left = dataset_path + f"img/image_0_{img_idx + 1}.png"
+    f1_right = dataset_path + f"img/image_1_{img_idx}.png"
+    f2_right = dataset_path + f"img/image_1_{img_idx}.png"
 
     # Load raw images
-    img1 = cv2.imread(frame1, cv2.IMREAD_GRAYSCALE)
-    img2 = cv2.imread(frame2, cv2.IMREAD_GRAYSCALE)
-    img_right = cv2.imread(right_img, cv2.IMREAD_GRAYSCALE)
+    img1_left = cv2.imread(f1_left, cv2.IMREAD_GRAYSCALE)
+    img2_left = cv2.imread(f2_left, cv2.IMREAD_GRAYSCALE)
+    img1_right = cv2.imread(f1_right, cv2.IMREAD_GRAYSCALE)
+    img2_right = cv2.imread(f2_right, cv2.IMREAD_GRAYSCALE)
 
-    if img1 is None or img2 is None or img_right is None:
+    if img1_left is None or img2_left is None or img1_right is None:
         raise ValueError("One or more images not found. Check file paths.")
 
     # Compute disparity & depth for frame 1
-    disparity = disparity_solver.compute_disparity(img1, img_right)
+    disparity = disparity_solver.compute_disparity(img1_left, img1_right)
     depth1 = depth_solver.compute_depth(disparity)
     #depth1 = np.clip(depth1, 0, 20)  # Depth clipping
 
     # Compute disparity & depth for frame 2
-    disparity2 = disparity_solver.compute_disparity(img2, img_right)
+    disparity2 = disparity_solver.compute_disparity(img2_left, img2_right)
     depth2 = depth_solver.compute_depth(disparity2)
     #depth2 = np.clip(depth2, 0, 20)  # Depth clipping
 
     # Compute optical flow
-    flow_uv = flow_solver.compute_flow(img1, img2)
+    flow_uv = flow_solver.compute_flow(img1_left, img2_left)
 
     # Extract keypoints (uniformly distributed)
-    keypoints = pts_src.get_keypoints(img1, max_number=400)
+    keypoints = pts_src.get_keypoints(img1_left, max_number=400)
     ##
     print(keypoints.shape)
     min_vals = keypoints.min(axis=0)  # [min_x, min_y]
@@ -129,23 +133,26 @@ if single_frame:
 
     # Also extract the valid 3D keypoints from frame 1.
     keypoints_3d_valid_f1 = keypoints_3d_f1[valid_mask]
+    keypoints_3d_valid_f2 = keypoints_3d_f2[valid_mask]
 
 
     # Visualization
     fig, ax = plt.subplots(figsize=(10, 7))
-    ax.imshow(img1, cmap="gray")
+    ax.imshow(img1_left, cmap="gray")
 
     # Optionally overlay the next frame for ghosting.
     if ghosting:
-        ax.imshow(img2, cmap="gray", alpha=0.3)
+        ax.imshow(img2_left, cmap="gray", alpha=0.3)
 
     # Draw flow vectors with arrow color based on depth range.
     for i in range(len(keypoints_valid)):
         x1, y1 = keypoints_valid[i]
         x2, y2 = projected_keypoints_valid[i]
 
+
         # Retrieve depth (z) from frame 1's valid 3D keypoints.
         depth_value = keypoints_3d_valid_f1[i, 2]
+        dz = keypoints_3d_valid_f2[i, 2] - keypoints_3d_valid_f1[i, 2]
 
         # Determine arrow color: red if depth is within [min_dist, max_dist], else blue.
         if min_dist <= depth_value <= max_dist:
@@ -154,6 +161,7 @@ if single_frame:
             color = "blue"
 
         ax.arrow(x1, y1, (x2 - x1), (y2 - y1), head_width=2, head_length=3, color=color)
+        ax.text(x1 + 4, y1 + 4, f"{dz:.2f}", color=color, fontsize=8)
 
     ax.set_title(f"Optical Flow Vectors - Frame {img_idx} → {img_idx + 1}")
     ax.axis("off")
@@ -187,9 +195,9 @@ else:
             # Load the current and next images.
             frame1_path = os.path.join(dataset_path, left_files[i])
             frame2_path = os.path.join(dataset_path, left_files[i + 1])
-            img1 = cv2.imread(frame1_path, cv2.IMREAD_GRAYSCALE)
-            img2 = cv2.imread(frame2_path, cv2.IMREAD_GRAYSCALE)
-            if img1 is None or img2 is None:
+            img1_left = cv2.imread(frame1_path, cv2.IMREAD_GRAYSCALE)
+            img2_left = cv2.imread(frame2_path, cv2.IMREAD_GRAYSCALE)
+            if img1_left is None or img2_left is None:
                 continue
 
             # Also load the corresponding right images for depth computation.
@@ -201,17 +209,17 @@ else:
                 continue
 
             # Compute disparity/depth for frame i.
-            disp1 = disparity_solver.compute_disparity(img1, img_right1)
+            disp1 = disparity_solver.compute_disparity(img1_left, img_right1)
             depth1 = depth_solver.compute_depth(disp1)
 
             # Compute disparity/depth for frame i+1.
-            disp2 = disparity_solver.compute_disparity(img2, img_right2)
+            disp2 = disparity_solver.compute_disparity(img2_left, img_right2)
             depth2 = depth_solver.compute_depth(disp2)
 
             # If this is the start of a new k-segment, reinitialize keypoints & tracks.
             if i % k == 0 or current_2D_keypoints is None:
                 # Detect 2D keypoints in the current frame.
-                new_keypoints_2D = pts_src.get_keypoints(img1, max_number=200)
+                new_keypoints_2D = pts_src.get_keypoints(img1_left, max_number=200)
                 # Convert them to 3D.
                 current_3D_points = pts_xform.to_3d(new_keypoints_2D, depth1)
                 valid_3D_mask = (current_3D_points[:, 2] > 0)
@@ -226,10 +234,10 @@ else:
                     track_start_z.append(pt3d[2])
             else:
                 # Compute optical flow from frame i to i+1.
-                flow_uv = flow_solver.compute_flow(img1, img2)
+                flow_uv = flow_solver.compute_flow(img1_left, img2_left)
                 new_3D_points, valid_mask = pts_flow.compute_3d_flow(current_2D_keypoints, depth1, depth2, flow_uv)
                 if new_3D_points.shape[0] < 4:
-                    new_keypoints_2D = pts_src.get_keypoints(img1, max_number=200)
+                    new_keypoints_2D = pts_src.get_keypoints(img1_left, max_number=200)
                     current_3D_points = pts_xform.to_3d(new_keypoints_2D, depth1)
                     valid_3D_mask = (current_3D_points[:, 2] > 0)
                     current_3D_points = current_3D_points[valid_3D_mask]
@@ -275,7 +283,7 @@ else:
                     return (255, 0, 0)  # Blue (BGR).
 
 
-            vis_img = cv2.cvtColor(img1, cv2.COLOR_GRAY2BGR)
+            vis_img = cv2.cvtColor(img1_left, cv2.COLOR_GRAY2BGR)
             for track, start_depth in zip(tracks_2D, track_start_z):
                 if len(track) < 2:
                     continue

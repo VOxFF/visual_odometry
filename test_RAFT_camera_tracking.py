@@ -46,12 +46,12 @@ stereo_checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raft
 flow_checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-things.pth"
 
 # To do
-compute_trajectory = True
+compute_trajectory = False
 render_images = True
 compose_movie = True
 
 # Parameters.
-limit = 0  # Use 0 for no limit.
+limit = 850  # Use 0 for no limit.
 
 min_depth = 0.0  # meters
 max_depth = 15.0  # meters
@@ -76,6 +76,7 @@ pts_flow = Keypoints3DFlow(params.get_camera_params(StereoParamsInterface.Stereo
 
 
 # Initialize the camera transformation estimator.
+#cam_estimator = CameraSvdXform(offset=np.array([0.02172, -6.61e-05, -0.00049]))
 cam_estimator = CameraSvdXform()
 
 # Prepare file and folder paths.
@@ -115,9 +116,9 @@ if compute_trajectory:
         if prev_depth is None:
             frame1_path = os.path.join(dataset_path, left_files[i])
             frame2_path = os.path.join(dataset_path, left_files[i + 1])
-            img1 = cv2.imread(frame1_path, cv2.IMREAD_GRAYSCALE)
-            img2 = cv2.imread(frame2_path, cv2.IMREAD_GRAYSCALE)
-            if img1 is None or img2 is None:
+            img_left1 = cv2.imread(frame1_path, cv2.IMREAD_GRAYSCALE)
+            img_left2 = cv2.imread(frame2_path, cv2.IMREAD_GRAYSCALE)
+            if img_left1 is None or img_left2 is None:
                 print(f"Skipping frame {i} due to missing images.")
                 continue
 
@@ -130,26 +131,26 @@ if compute_trajectory:
                 continue
 
             # Compute disparity and depth for both frames.
-            disp1 = disparity_solver.compute_disparity(img1, img_right1)
+            disp1 = disparity_solver.compute_disparity(img_left1, img_right1)
             depth1 = depth_solver.compute_depth(disp1)
-            disp2 = disparity_solver.compute_disparity(img2, img_right2)
+            disp2 = disparity_solver.compute_disparity(img_left2, img_right2)
             depth2 = depth_solver.compute_depth(disp2)
             # Compute optical flow from img1 to img2.
-            flow_uv = flow_solver.compute_flow(img1, img2)
+            flow_uv = flow_solver.compute_flow(img_left1, img_left2)
 
             # Cache the second frame's data for the next iteration.
-            prev_img_left = img2
+            prev_img_left = img_left2
             prev_img_right = img_right2
             prev_depth = depth2
         else:
             # For subsequent iterations, use cached previous frame.
-            img1 = prev_img_left
+            img_left1 = prev_img_left
             depth1 = prev_depth
 
             # Load new current frame (frame i+1).
             frame2_path = os.path.join(dataset_path, left_files[i + 1])
-            img2 = cv2.imread(frame2_path, cv2.IMREAD_GRAYSCALE)
-            if img2 is None:
+            img_left2 = cv2.imread(frame2_path, cv2.IMREAD_GRAYSCALE)
+            if img_left2 is None:
                 print(f"Skipping frame {i} due to missing image for frame {i+1}.")
                 continue
             right2_path = frame2_path.replace("image_0_", "image_1_")
@@ -159,18 +160,18 @@ if compute_trajectory:
                 continue
 
             # Compute disparity and depth for the new current frame.
-            disp2 = disparity_solver.compute_disparity(img2, img_right2)
+            disp2 = disparity_solver.compute_disparity(img_left2, img_right2)
             depth2 = depth_solver.compute_depth(disp2)
             # Compute optical flow from the cached frame to the new frame.
-            flow_uv = flow_solver.compute_flow(img1, img2)
+            flow_uv = flow_solver.compute_flow(img_left1, img_left2)
 
             # Update the cache.
-            prev_img_left = img2
+            prev_img_left = img_left2
             prev_img_right = img_right2
             prev_depth = depth2
 
         # Keypoint reinitialization/tracking.
-        keypoints_2D = pts_src.get_keypoints(img1, max_number=400)
+        keypoints_2D = pts_src.get_keypoints(img_left1, max_number=320)
         keypoints_3D_1 = pts_xform.to_3d(keypoints_2D, depth1)
 
         # Let's try to limit the range
