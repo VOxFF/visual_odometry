@@ -29,6 +29,9 @@ from keypoints.keypoints_3d import Keypoints3DXform
 from keypoints.keypoints_3d_flow import Keypoints3DFlow
 from camera.camera_svd_xform import CameraSvdXform
 from utilities.video_composition import make_stacked_video
+from utilities.data_utils import match_ground_truth_positions
+from utilities.data_utils import read_ground_truth_positions
+from utilities.data_utils import read_ground_truth_transforms
 from utilities.plot_3d import TrajectoryPlot
 
 # ------------------------------
@@ -43,7 +46,7 @@ stereo_checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raft
 flow_checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-things.pth"
 
 # To do
-compute_trajectory = False
+compute_trajectory = True
 render_images = True
 compose_movie = True
 
@@ -77,6 +80,7 @@ cam_estimator = CameraSvdXform()
 
 # Prepare file and folder paths.
 traj_txt_path = os.path.join(dataset_path, "camera_trajectory.txt")
+truth_txt_path = os.path.join(dataset_path, "groundtruth.txt")
 traj_img_dir = os.path.join(dataset_path, "out_traj")
 os.makedirs(traj_img_dir, exist_ok=True)
 output_dir = os.path.join(dataset_path, "out_cam_tracking")
@@ -166,7 +170,7 @@ if compute_trajectory:
             prev_depth = depth2
 
         # Keypoint reinitialization/tracking.
-        keypoints_2D = pts_src.get_keypoints(img1, max_number=280)
+        keypoints_2D = pts_src.get_keypoints(img1, max_number=400)
         keypoints_3D_1 = pts_xform.to_3d(keypoints_2D, depth1)
 
         # Let's try to limit the range
@@ -176,8 +180,6 @@ if compute_trajectory:
         print(f"keypoints = {len(keypoints_2D)}")
 
         keypoints_3D_2, valid_mask = pts_flow.compute_3d_flow(keypoints_2D, depth1, depth2, flow_uv)
-
-
 
         # Check if we have enough valid keypoints.
         if keypoints_3D_2.shape[0] < 4:
@@ -261,10 +263,11 @@ if render_images:
                 # Update the global transformation: T_global = T_global * T_rel.
                 T_global = T_global @ T_rel
 
-                cam_pos = T_global[:3, 3].copy()
-                R_cam = T_global[:3, :3]
-                world_pos = M @ cam_pos
-                R_world = M @ R_cam @ M.T
+                cam_pos = T_global[:3, 3].copy()  # original camera position
+                R_cam = T_global[:3, :3]  # original rotation matrix
+
+                world_pos = M @ cam_pos  # convert translation
+                R_world = M @ R_cam @ M.T  # convert rotation (note: for a permutation matrix, M.T == M⁻¹)
 
                 T_world = np.eye(4)
                 T_world[:3, :3] = R_world
@@ -273,19 +276,24 @@ if render_images:
                 global_positions.append(world_pos)
                 global_Ts.append(T_world)
 
-    # Convert the list of global positions into a NumPy array.
-    global_positions_array = np.array(global_positions)
-    if global_positions_array.shape[0] > 0:
+
+    # Get the combined trajectory (list of tuples) by matching ground truth.
+    #combined_positions = match_ground_truth_positions(global_positions, left_txt, truth_txt_path)
+    if False:
+        global_positions = read_ground_truth_positions(truth_txt_path, skip=20)
+        global_Ts = read_ground_truth_transforms(truth_txt_path, skip=20)
+
+    if len(global_positions) > 0:
         print("Rendering trajectory images with fixed scale...")
 
         # Create an instance of your TrajectoryPlot class.
-        # (Assuming TrajectoryPlot is defined in utilities/plot_3d.py.)
         from utilities.plot_3d import TrajectoryPlot
-        tp = TrajectoryPlot(global_positions_array, elevation=elevation, azimuth=azimuth,
-                              zoom_distance=zoom_distance, small_font_size=small_font_size)
+
+        tp = TrajectoryPlot(global_positions, elevation=elevation, azimuth=azimuth,
+                            zoom_distance=zoom_distance, small_font_size=small_font_size)
 
         # For each frame, render the trajectory up to that frame using its full transformation.
-        for idx in range(len(global_positions_array)):
+        for idx in range(len(global_positions)):
             current_T = global_Ts[idx]  # Use the transformation for the current frame.
             fig = tp.plot(current_T, idx)
             plot_path = os.path.join(traj_img_dir, f"traj_{idx:06d}.png")
@@ -293,9 +301,10 @@ if render_images:
             plt.close(fig)
 
             if idx % 20 == 0:
-                print(f"Rendered trajectory image for frame {idx + 1} / {len(global_positions_array)}")
+                print(f"Rendered trajectory image for frame {idx + 1} / {len(global_positions)}")
     else:
         print("No global positions available for trajectory rendering.")
+
 
 # ------------------------------
 # Compose Movie: Original Left Image + Trajectory Visualization

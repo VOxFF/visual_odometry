@@ -104,7 +104,7 @@ if single_frame:
     flow_uv = flow_solver.compute_flow(img1, img2)
 
     # Extract keypoints (uniformly distributed)
-    keypoints = pts_src.get_keypoints(img1, max_number=200)
+    keypoints = pts_src.get_keypoints(img1, max_number=400)
     ##
     print(keypoints.shape)
     min_vals = keypoints.min(axis=0)  # [min_x, min_y]
