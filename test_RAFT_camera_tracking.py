@@ -28,6 +28,7 @@ from keypoints.keypoints_uniform import UniformKeyPoints
 from keypoints.keypoints_3d import Keypoints3DXform
 from keypoints.keypoints_3d_flow import Keypoints3DFlow
 from camera.camera_svd_xform import CameraSvdXform
+from camera.camera_svd_xform import CameraRansacXform
 from utilities.video_composition import make_stacked_video
 from utilities.data_utils import match_ground_truth_positions
 from utilities.data_utils import read_ground_truth_positions
@@ -46,12 +47,12 @@ stereo_checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raft
 flow_checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-things.pth"
 
 # To do
-compute_trajectory = False
+compute_trajectory = True
 render_images = True
 compose_movie = True
 
 # Parameters.
-limit = 850  # Use 0 for no limit.
+limit = 0  # Use 0 for no limit.
 
 min_depth = 0.0  # meters
 max_depth = 15.0  # meters
@@ -77,7 +78,8 @@ pts_flow = Keypoints3DFlow(params.get_camera_params(StereoParamsInterface.Stereo
 
 # Initialize the camera transformation estimator.
 #cam_estimator = CameraSvdXform(offset=np.array([0.02172, -6.61e-05, -0.00049]))
-cam_estimator = CameraSvdXform()
+#cam_estimator = CameraSvdXform()
+cam_estimator = CameraRansacXform()
 
 # Prepare file and folder paths.
 traj_txt_path = os.path.join(dataset_path, "camera_trajectory.txt")
@@ -190,6 +192,13 @@ if compute_trajectory:
         # Filter the keypoints using the valid mask.
         old_3D = keypoints_3D_1[valid_mask]
         new_3D = keypoints_3D_2[valid_mask]
+
+        # Create a mask where dz <= 1 add filter
+        dz = new_3D[:, 2] - old_3D[:, 2]
+        dz_mask = abs(dz) <= 1.0
+        old_3D = old_3D[dz_mask]
+        new_3D = new_3D[dz_mask]
+
 
         # Compute the relative transformation (rotation and translation) that maps old_3D to new_3D.
         R_rel, t_rel = cam_estimator.compute_camera_xform(old_3D, new_3D)

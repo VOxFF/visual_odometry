@@ -61,7 +61,7 @@ if single_frame:
     #img_idx = 2100
     #img_idx = 1200
     #img_idx = 600
-    img_idx = 400
+    img_idx = 401
     left_file = dataset_path + f"img/image_0_{img_idx}.png"
     right_file = dataset_path + f"img/image_1_{img_idx}.png"
 

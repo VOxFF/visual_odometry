@@ -39,12 +39,13 @@ single_frame = True
 
 # Single frame params
 #img_idx = 50
+#img_idx = 300
 img_idx = 400
 #img_idx = 401
 #img_idx = 600
-#img_idx = 1200
-#img_idx = 2000
-#img_idx = 2800
+# img_idx = 1200
+# img_idx = 2000
+# img_idx = 2800
 
 ghosting = False
 
@@ -83,7 +84,7 @@ if single_frame:
     f1_left = dataset_path + f"img/image_0_{img_idx}.png"
     f2_left = dataset_path + f"img/image_0_{img_idx + 1}.png"
     f1_right = dataset_path + f"img/image_1_{img_idx}.png"
-    f2_right = dataset_path + f"img/image_1_{img_idx}.png"
+    f2_right = dataset_path + f"img/image_1_{img_idx + 1}.png"
 
     # Load raw images
     img1_left = cv2.imread(f1_left, cv2.IMREAD_GRAYSCALE)
@@ -139,10 +140,19 @@ if single_frame:
     # Visualization
     fig, ax = plt.subplots(figsize=(10, 7))
     ax.imshow(img1_left, cmap="gray")
+    #ax.imshow(depth2, cmap="inferno")
+    #ax.imshow(-disparity, cmap="inferno")
+    #ax.imshow(img2_right, cmap="gray")
+
 
     # Optionally overlay the next frame for ghosting.
     if ghosting:
         ax.imshow(img2_left, cmap="gray", alpha=0.3)
+
+    ##
+    dz_n =keypoints_3d_valid_f1[:, 2], keypoints_3d_valid_f2[:, 2]
+    print(f"dz max: {np.max(dz_n)} min: {np.min(dz_n)}")
+    ##
 
     # Draw flow vectors with arrow color based on depth range.
     for i in range(len(keypoints_valid)):
@@ -152,16 +162,19 @@ if single_frame:
 
         # Retrieve depth (z) from frame 1's valid 3D keypoints.
         depth_value = keypoints_3d_valid_f1[i, 2]
-        dz = keypoints_3d_valid_f2[i, 2] - keypoints_3d_valid_f1[i, 2]
+        z1, z2 = keypoints_3d_valid_f1[i, 2], keypoints_3d_valid_f2[i, 2]
+        dz = z2 - z1
+
+        if abs(dz) > 1:
+            print(f"{i} dz max: {dz}")
 
         # Determine arrow color: red if depth is within [min_dist, max_dist], else blue.
-        if min_dist <= depth_value <= max_dist:
-            color = "red"
-        else:
-            color = "blue"
-
+        color = "yellow" if min_dist <= depth_value <= max_dist else "blue"
         ax.arrow(x1, y1, (x2 - x1), (y2 - y1), head_width=2, head_length=3, color=color)
+
+        color = "yellow" if abs(dz) < 1 else "red"
         ax.text(x1 + 4, y1 + 4, f"{dz:.2f}", color=color, fontsize=8)
+        #ax.text(x1 + 4, y1 + 4, f"{z1:.2f}:{z2:.2f}", color=color, fontsize=8)
 
     ax.set_title(f"Optical Flow Vectors - Frame {img_idx} → {img_idx + 1}")
     ax.axis("off")
