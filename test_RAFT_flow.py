@@ -54,7 +54,8 @@ if single_frame:
     #img_idx = 0
     #img_idx = 50
     #img_idx = 600
-    img_idx = 1200
+    img_idx = 960
+    #img_idx = 1200
     #img_idx = 2000
     #img_idx = 2800
     frame1 = dataset_path + f"img/image_0_{img_idx}.png"

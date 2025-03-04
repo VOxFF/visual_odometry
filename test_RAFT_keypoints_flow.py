@@ -40,14 +40,16 @@ single_frame = True
 # Single frame params
 #img_idx = 50
 #img_idx = 300
-img_idx = 400
+#img_idx = 400
 #img_idx = 401
 #img_idx = 600
+img_idx = 960
 # img_idx = 1200
 # img_idx = 2000
 # img_idx = 2800
 
 ghosting = False
+z_labels = False
 
 # Multi frame params
 render_images = False
@@ -109,7 +111,7 @@ if single_frame:
     flow_uv = flow_solver.compute_flow(img1_left, img2_left)
 
     # Extract keypoints (uniformly distributed)
-    keypoints = pts_src.get_keypoints(img1_left, max_number=400)
+    keypoints = pts_src.get_keypoints(img1_left, max_number=200)
     ##
     print(keypoints.shape)
     min_vals = keypoints.min(axis=0)  # [min_x, min_y]
@@ -172,9 +174,10 @@ if single_frame:
         color = "yellow" if min_dist <= depth_value <= max_dist else "blue"
         ax.arrow(x1, y1, (x2 - x1), (y2 - y1), head_width=2, head_length=3, color=color)
 
-        color = "yellow" if abs(dz) < 1 else "red"
-        ax.text(x1 + 4, y1 + 4, f"{dz:.2f}", color=color, fontsize=8)
-        #ax.text(x1 + 4, y1 + 4, f"{z1:.2f}:{z2:.2f}", color=color, fontsize=8)
+        if z_labels:
+            color = "yellow" if abs(dz) < 1 else "red"
+            ax.text(x1 + 4, y1 + 4, f"{dz:.2f}", color=color, fontsize=8)
+            #ax.text(x1 + 4, y1 + 4, f"{z1:.2f}:{z2:.2f}", color=color, fontsize=8)
 
     ax.set_title(f"Optical Flow Vectors - Frame {img_idx} → {img_idx + 1}")
     ax.axis("off")

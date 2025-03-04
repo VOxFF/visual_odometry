@@ -45,7 +45,8 @@ disparity_solver = DisparityRAFT(checkpoint, rectification)
 depth_solver = StereoDepth(params)
 
 # Load mask
-mask = cv2.imread("/home/roman/Downloads/fpv_datasets/mask.png", cv2.IMREAD_GRAYSCALE).astype(np.uint8) == 0
+#mask = cv2.imread("/home/roman/Downloads/fpv_datasets/mask.png", cv2.IMREAD_GRAYSCALE).astype(np.uint8) == 0
+mask = None
 
 
 single_frame = True  # Set to True for testing a single frame
@@ -57,11 +58,12 @@ limit = 0  # Set to None for full dataset
 
 # **Single Frame Mode**
 if single_frame:
-    # img_idx = 2800
+    #img_idx = 2800
     #img_idx = 2100
     #img_idx = 1200
+    img_idx = 960
     #img_idx = 600
-    img_idx = 401
+    #img_idx = 401
     left_file = dataset_path + f"img/image_0_{img_idx}.png"
     right_file = dataset_path + f"img/image_1_{img_idx}.png"
 
@@ -91,12 +93,12 @@ if single_frame:
     axs[0, 1].imshow(img_right, cmap="gray")
     axs[0, 1].set_title("Right Image")
 
-    im_disp = axs[1, 0].imshow(np.where(mask, -disparity_masked, np.nan), cmap="jet")
+    im_disp = axs[1, 0].imshow(np.where(mask, -disparity_masked, np.nan) if mask else -disparity_masked, cmap="jet")
     axs[1, 0].set_title("Disparity Map (Masked)")
     axs[1, 0].axis("off")
     fig.colorbar(im_disp, ax=axs[1, 0], fraction=0.046, pad=0.04)
 
-    im_depth = axs[1, 1].imshow(np.where(mask, depth_masked, np.nan), cmap="inferno")
+    im_depth = axs[1, 1].imshow(np.where(mask, depth_masked, np.nan) if mask else depth_masked, cmap="inferno")
     axs[1, 1].set_title("Metric Depth Map (Clipped & Masked)")
     axs[1, 1].axis("off")
     fig.colorbar(im_depth, ax=axs[1, 1], fraction=0.046, pad=0.04)
@@ -149,8 +151,8 @@ else:
             index = int(left_img.split("_")[-1].split(".")[0])  # Extract frame index
 
             # Save disparity & depth
-            plt.imsave(dataset_path + f"out_disp/{index}_disparity.png", np.where(mask, -disparity_saved, 0), cmap="jet")
-            plt.imsave(dataset_path + f"out_depth/{index}_depth.png", np.where(mask, depth_saved, 0), cmap="inferno")
+            plt.imsave(dataset_path + f"out_disp/{index}_disparity.png", np.where(mask, -disparity_saved, 0) if mask else -disparity_saved, cmap="jet")
+            plt.imsave(dataset_path + f"out_depth/{index}_depth.png", np.where(mask, depth_saved, 0) if mask else depth_saved, cmap="inferno")
 
             if i % 20 == 0:
                 print(f"Processed {i} of {len(left_files)} images.")
