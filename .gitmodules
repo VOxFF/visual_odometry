@@ -4,3 +4,6 @@
 [submodule "external/RAFT-Flow"]
 	path = external/RAFT-Flow
 	url = git@github.com:VOxFF/RAFT-Flow.git
+[submodule "external/aanet"]
+	path = external/aanet
+	url = git@github.com:VOxFF/aanet.git
