@@ -12,4 +12,6 @@ This repository provides a modular, Python-based implementation of visual odomet
   <img src="./readme/stereo_pipeline.png" alt="Stereo Pipleline">
 </p>
 
+## Datsets
+Original datasets https://fpv.ifi.uzh.ch/datasets-backup/
 
