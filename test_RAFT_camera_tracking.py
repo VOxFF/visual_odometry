@@ -288,7 +288,9 @@ if render_images:
 
 
     # Get the combined trajectory (list of tuples) by matching ground truth.
-    #combined_positions = match_ground_truth_positions(global_positions, left_txt, truth_txt_path)
+
+    combined_positions = match_ground_truth_positions(global_positions, left_txt, truth_txt_path)
+
     if False:
         global_positions = read_ground_truth_positions(truth_txt_path, skip=20)
         global_Ts = read_ground_truth_transforms(truth_txt_path, skip=20)
@@ -297,9 +299,10 @@ if render_images:
         print("Rendering trajectory images with fixed scale...")
 
         # Create an instance of your TrajectoryPlot class.
-        from utilities.plot_3d import TrajectoryPlot
+        # tp = TrajectoryPlot(global_positions, elevation=elevation, azimuth=azimuth,
+        #                     zoom_distance=zoom_distance, small_font_size=small_font_size)
 
-        tp = TrajectoryPlot(global_positions, elevation=elevation, azimuth=azimuth,
+        tp = TrajectoryPlot(combined_positions, elevation=elevation, azimuth=azimuth,
                             zoom_distance=zoom_distance, small_font_size=small_font_size)
 
         # For each frame, render the trajectory up to that frame using its full transformation.

@@ -127,7 +127,7 @@ def match_ground_truth_positions(computed_positions, image_list_path, gt_file_pa
             img_ts = float(df_images.iloc[i]['timestamp'])
         except IndexError:
             print(f"Index {i}: No image timestamp found. Setting ground truth to None.")
-            results.append((np.array(comp_pos), None))
+            results.append((np.array(comp_pos), np.array([0, 0, 0])))
             continue
 
         # Calculate the absolute time differences.
@@ -135,14 +135,20 @@ def match_ground_truth_positions(computed_positions, image_list_path, gt_file_pa
         min_diff = time_diffs.min()
         idx_closest = time_diffs.idxmin()
 
+        print(f"{i} min diff: {min_diff}");
+
         if min_diff <= tolerance:
             gt_row = df_gt.loc[idx_closest]
             gt_position = np.array([gt_row['tx'], gt_row['ty'], gt_row['tz']])
             print(f"Index {i}: Image timestamp {img_ts:.3f} matched with GT timestamp {df_gt.loc[idx_closest]['timestamp']:.3f} (diff: {min_diff:.3f}s)")
         else:
-            gt_position = None
+            gt_position = np.array([0, 0, 0])
             print(f"Index {i}: No GT within tolerance for image timestamp {img_ts:.3f} (min diff: {min_diff:.3f}s > tol {tolerance})")
 
         results.append((np.array(comp_pos), gt_position))
+
+    print(f"matches found: {len(results)}")
+
+
 
     return results
