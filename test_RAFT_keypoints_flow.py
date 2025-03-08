@@ -162,8 +162,8 @@ if single_frame:
         dz = z2 - z1
 
         # Mark keypoints on both frames.
-        ax1.plot(x1, y1, "ro", markersize=4, color="red")  # starting point in frame f
-        ax2.plot(x2, y2, "ro", markersize=8, color="red", marker='x')  # projected point in frame f+1
+        ax1.plot(x1, y1, "ro", markersize=4, )  # starting point in frame f
+        ax2.plot(x2, y2, "ro", markersize=8, marker='x')  # projected point in frame f+1
 
         # Determine arrow color based on depth: yellow if within [min_dist, max_dist], else blue.
         arrow_color = "yellow" if min_dist <= depth_value <= max_dist else "blue"

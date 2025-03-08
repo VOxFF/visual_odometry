@@ -1,6 +1,6 @@
 """
 uses https://github.com/VOxFF/RAFT-Stereo
-af fork of https://github.com/princeton-vl/RAFT-Stereo
+the fork of https://github.com/princeton-vl/RAFT-Stereo
 """
 
 
@@ -64,6 +64,13 @@ class DisparityRAFT(StereoDisparityInterface):
         if img_left is None or img_right is None:
             raise ValueError("One or both images were not found or invalid.")
 
+        # Load images if file paths are provided.
+        if isinstance(img_left, str):
+            img_left = cv2.imread(img_left, cv2.IMREAD_GRAYSCALE)
+
+        if isinstance(img_right, str):
+            img_right = cv2.imread(img_right, cv2.IMREAD_GRAYSCALE)
+
         # Apply rectification if available
         if self.rectification:
             img_left, img_right = self.rectification.rectify_images(img_left, img_right)
@@ -88,14 +95,14 @@ class DisparityRAFT(StereoDisparityInterface):
         return flow_up.cpu().numpy().squeeze()
 
     def _loadImage(self, image_param):
-        """Converts input image (file path or NumPy array) to the required format for RAFT-Stereo."""
-        if isinstance(image_param, str):  # a file path
-            img = Image.open(image_param)
-        elif isinstance(image_param, np.ndarray):  # an OpenCV image
+        """Converts input image NumPy array to the required format for RAFT-Stereo."""
+
+        if isinstance(image_param, np.ndarray):  # an OpenCV image
             img = Image.fromarray(cv2.cvtColor(image_param, cv2.COLOR_BGR2RGB))
         else:
             raise TypeError("Unsupported image format")
-            # Convert grayscale images to RGB
+
+        # Convert grayscale images to RGB
         if img.mode in ("L", "LA"):
             img = img.convert("RGB")
         img = np.array(img).astype(np.uint8)  # to NumPy array
