@@ -140,48 +140,54 @@ if single_frame:
 
 
     # Visualization
-    fig, ax = plt.subplots(figsize=(10, 7))
-    ax.imshow(img1_left, cmap="gray")
-    #ax.imshow(depth2, cmap="inferno")
-    #ax.imshow(-disparity, cmap="inferno")
-    #ax.imshow(img2_right, cmap="gray")
+    # Left for frame f, right for frame f+1.
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
 
+    # Display the original images.
+    ax1.imshow(img1_left, cmap="gray")
+    ax1.set_title(f"Frame {img_idx}")
+    ax2.imshow(img2_left, cmap="gray")
+    ax2.set_title(f"Frame {img_idx + 1}")
 
-    # Optionally overlay the next frame for ghosting.
-    if ghosting:
-        ax.imshow(img2_left, cmap="gray", alpha=0.3)
-
-    ##
-    dz_n =keypoints_3d_valid_f1[:, 2], keypoints_3d_valid_f2[:, 2]
-    print(f"dz max: {np.max(dz_n)} min: {np.min(dz_n)}")
-    ##
-
-    # Draw flow vectors with arrow color based on depth range.
+    # Loop over each valid keypoint.
     for i in range(len(keypoints_valid)):
+        # Get original and projected keypoint coordinates.
         x1, y1 = keypoints_valid[i]
         x2, y2 = projected_keypoints_valid[i]
 
-
-        # Retrieve depth (z) from frame 1's valid 3D keypoints.
+        # Retrieve the depth value from frame f and compute the depth change.
         depth_value = keypoints_3d_valid_f1[i, 2]
-        z1, z2 = keypoints_3d_valid_f1[i, 2], keypoints_3d_valid_f2[i, 2]
+        z1 = keypoints_3d_valid_f1[i, 2]
+        z2 = keypoints_3d_valid_f2[i, 2]
         dz = z2 - z1
 
-        if abs(dz) > 1:
-            print(f"{i} dz max: {dz}")
+        # Mark keypoints on both frames.
+        ax1.plot(x1, y1, "ro", markersize=4, color="red")  # starting point in frame f
+        ax2.plot(x2, y2, "ro", markersize=8, color="red", marker='x')  # projected point in frame f+1
 
-        # Determine arrow color: red if depth is within [min_dist, max_dist], else blue.
-        color = "yellow" if min_dist <= depth_value <= max_dist else "blue"
-        ax.arrow(x1, y1, (x2 - x1), (y2 - y1), head_width=2, head_length=3, color=color)
+        # Determine arrow color based on depth: yellow if within [min_dist, max_dist], else blue.
+        arrow_color = "yellow" if min_dist <= depth_value <= max_dist else "blue"
 
+        # Draw the optical flow
+        dx, dy = (x2 - x1), (y2 - y1)
+        ax1.arrow(x1, y1, dx, dy, head_width=2, head_length=3, color=arrow_color, linewidth=1)
+        ax2.arrow(x1, y1, dx, dy, head_width=2, head_length=3, color=arrow_color, linewidth=1)
+
+        # If z_labels are enabled, annotate the arrow with the depth difference.
         if z_labels:
-            color = "yellow" if abs(dz) < 1 else "red"
-            ax.text(x1 + 4, y1 + 4, f"{dz:.2f}", color=color, fontsize=8)
-            #ax.text(x1 + 4, y1 + 4, f"{z1:.2f}:{z2:.2f}", color=color, fontsize=8)
+            # Choose text color based on dz magnitude.
+            text_color = "yellow" if abs(dz) < 1 else "red"
+            ax1.text(x1 + 4, y1 + 4, f"{dz:.2f}", color=text_color, fontsize=8)
 
-    ax.set_title(f"Optical Flow Vectors - Frame {img_idx} → {img_idx + 1}")
-    ax.axis("off")
+
+
+    # Remove axis ticks for a cleaner display.
+    for ax in (ax1, ax2):
+        ax.axis("off")
+
+    plt.tight_layout()
     plt.show()
+
 
 
 else:
