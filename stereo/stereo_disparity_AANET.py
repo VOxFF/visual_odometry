@@ -12,7 +12,9 @@ import numpy as np
 from stereo.stereo_interfaces import StereoDisparityInterface
 from stereo.stereo_rectification import StereoRectificationInterface
 
+
 # Import the AANet modules from the external submodule (assumed to be in /external)
+#import external.aanet.nets as nets
 import external.aanet.nets as nets
 from external.aanet.dataloader import transforms
 from external.aanet.utils import utils
@@ -118,6 +120,15 @@ class DisparityAANet(StereoDisparityInterface):
 
         # Create a sample dictionary and apply transformation.
         sample = {'left': img_left, 'right': img_right}
+
+        if sample['left'].ndim == 2:
+            # Convert grayscale image (H, W) to 3-channel image (H, W, 3)
+            sample['left'] = np.stack([sample['left']] * 3, axis=2)
+
+        if sample['right'].ndim == 2:
+            # Convert grayscale image (H, W) to 3-channel image (H, W, 3)
+            sample['right'] = np.stack([sample['right']] * 3, axis=2)
+
         sample = self.test_transform(sample)
 
         # Convert to device and add batch dimension.

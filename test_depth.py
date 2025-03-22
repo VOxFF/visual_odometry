@@ -7,11 +7,17 @@ import sys
 raft_path = os.path.join(os.path.dirname(__file__), "external", "RAFT-Stereo")
 sys.path.append(raft_path)  # Add RAFT to Python path
 
+# trick for AANet
+#sys.path.append(os.path.join(os.path.dirname(__file__), "external"))
+aanet_path = os.path.join(os.path.dirname(__file__), "external", "aanet")
+sys.path.append(aanet_path)
+
 import cv2
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from stereo.stereo_disparity_RAFT import DisparityRAFT
+from stereo.stereo_disparity_AANET import DisparityAANet
 from stereo.stereo_depth import StereoDepth
 from stereo.stereo_params_YAML import StereoParamsYAML
 from stereo.stereo_rectification import StereoRectification
@@ -26,7 +32,12 @@ from utilities.video_composition import make_stacked_video
 dataset_path = "/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/"
 yaml_file = "/home/roman/Downloads/fpv_datasets/indoor_forward_calib_snapdragon/indoor_forward_calib_snapdragon_imu.yaml"
 
+#RAFT checkpoint
 checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raftstereo-sceneflow.pth"
+#AANET checkpoint
+checkpoint = "/home/roman/Rainbow/visual_odometry/models/aanet/aanet_sceneflow-5aa5a24e.pth"
+
+
 
 # Depth clipping limits - not sure that we need this
 DEPTH_MIN = 0
@@ -39,7 +50,9 @@ params = StereoParamsYAML(yaml_file)
 rectification = StereoRectification(params)
 
 # Pass rectification to DisparityRAFT
-disparity_solver = DisparityRAFT(checkpoint, rectification)
+#disparity_solver = DisparityRAFT(checkpoint, rectification)
+disparity_solver = DisparityAANet(checkpoint, rectification)
+
 
 # Initialize depth solver (StereoDepth)
 depth_solver = StereoDepth(params)
