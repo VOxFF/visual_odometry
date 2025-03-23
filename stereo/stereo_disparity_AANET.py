@@ -48,13 +48,13 @@ class DisparityAANet(StereoDisparityInterface):
         self.feature_similarity = kwargs.get('feature_similarity', 'correlation')
         self.aggregation_type = kwargs.get('aggregation_type', 'adaptive')
         self.num_scales = kwargs.get('num_scales', 3)
-        self.num_fusions = kwargs.get('num_fusions', 6)
+        self.num_fusions = kwargs.get('num_fusions', 6) #6
         self.num_stage_blocks = kwargs.get('num_stage_blocks', 1)
         self.num_deform_blocks = kwargs.get('num_deform_blocks', 3)
         self.no_intermediate_supervision = kwargs.get('no_intermediate_supervision', False)
         self.refinement_type = kwargs.get('refinement_type', 'stereodrnet')
-        self.mdconv_dilation = kwargs.get('mdconv_dilation', 2)
-        self.deformable_groups = kwargs.get('deformable_groups', 2)
+        self.mdconv_dilation = kwargs.get('mdconv_dilation', 2) #2
+        self.deformable_groups = kwargs.get('deformable_groups', 2) #2
 
         # Initialize the AANet model.
         self.model = nets.AANet(
@@ -170,4 +170,4 @@ class DisparityAANet(StereoDisparityInterface):
 
         # Return the disparity map as a NumPy array.
         disp = pred_disp[0].detach().cpu().numpy()
-        return disp
+        return -disp

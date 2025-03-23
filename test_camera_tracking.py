@@ -63,7 +63,7 @@ params = StereoParamsYAML(yaml_file)
 rectification = StereoRectification(params)
 
 # Initialize solvers.
-disparity_solver = DisparityRAFT(stereo_checkpoint, rectification)
+disparity_solver = DisparityRAFT(stereo_checkpoint, rectification, 16)
 depth_solver = StereoDepth(params)
 flow_solver = OpticalFlowRAFT(flow_checkpoint, rectification)
 
