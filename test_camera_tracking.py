@@ -65,7 +65,7 @@ rectification = StereoRectification(params)
 # Initialize solvers.
 disparity_solver = DisparityRAFT(stereo_checkpoint, rectification, 16)
 depth_solver = StereoDepth(params)
-flow_solver = OpticalFlowRAFT(flow_checkpoint, rectification)
+flow_solver = OpticalFlowRAFT(flow_checkpoint, rectification, 16)
 
 # Initialize keypoint extraction and 3D processing.
 # Retrieve the rectification masks (assuming they have been computed already)

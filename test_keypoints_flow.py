@@ -82,7 +82,7 @@ rectification = StereoRectification(params)
 # Stereo for disparity
 if disparity_type is Solver.RAFT:
     stereo_checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raftstereo-sceneflow.pth"
-    disparity_solver = DisparityRAFT(stereo_checkpoint, rectification, 16) #32
+    disparity_solver = DisparityRAFT(stereo_checkpoint, rectification, 8) #32
 
 if disparity_type is Solver.AANET:
     stereo_checkpoint = "/home/roman/Rainbow/visual_odometry/models/aanet/aanet_sceneflow-5aa5a24e.pth"
@@ -91,7 +91,7 @@ if disparity_type is Solver.AANET:
 depth_solver = StereoDepth(params)
 
 # Initialize RAFT for optical flow
-flow_solver = OpticalFlowRAFT(flow_checkpoint, rectification)
+flow_solver = OpticalFlowRAFT(flow_checkpoint, rectification, 8) #32
 
 # Initialize Keypoint Extraction and 3D Processing
 pts_src = UniformKeyPoints(rectification_mask=rectification.get_rectification_masks()[0])

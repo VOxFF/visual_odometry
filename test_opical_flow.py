@@ -47,7 +47,7 @@ params = StereoParamsYAML(yaml_file)
 rectification = StereoRectification(params)
 
 # Load Optical Flow Solver (RAFT)
-flow_solver = OpticalFlowRAFT(checkpoint, rectification)
+flow_solver = OpticalFlowRAFT(checkpoint, rectification, 12)
 
 if single_frame:
     # Select image pair
