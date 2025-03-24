@@ -1,5 +1,6 @@
 import os
 import sys
+from enum import Enum, auto
 
 # Get the absolute path of RAFT-Stereo and RAFT-Flow
 raft_stereo_path = os.path.join(os.path.dirname(__file__), "external", "RAFT-Stereo")
@@ -9,6 +10,10 @@ sys.path.append(raft_flow_path)
 
 core_path = os.path.join(raft_flow_path, "flow_core")
 sys.path.insert(0, core_path)  # Ensure core modules are found
+
+# trick for AANet
+aanet_path = os.path.join(os.path.dirname(__file__), "external", "aanet")
+sys.path.append(aanet_path)
 
 
 import cv2
@@ -21,19 +26,27 @@ from stereo.stereo_depth import StereoDepth
 from stereo.stereo_params_YAML import StereoParamsYAML
 from stereo.stereo_rectification import StereoRectification
 from stereo.stereo_disparity_RAFT import DisparityRAFT
+from stereo.stereo_disparity_AANET import DisparityAANet
 from flow.flow_map_RAFT import OpticalFlowRAFT
 from keypoints.keypoints_uniform import UniformKeyPoints
 from keypoints.keypoints_3d import Keypoints3DXform
 from keypoints.keypoints_3d_flow import Keypoints3DFlow
 from utilities.video_composition import make_stacked_video
 
+class Solver(Enum):
+    RAFT = auto()
+    AANET = auto()
+
+disparity_type = Solver.AANET
+
 # Dataset Path (Change to your dataset)
 dataset_path = "/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/"
 yaml_file = "/home/roman/Downloads/fpv_datasets/indoor_forward_calib_snapdragon/indoor_forward_calib_snapdragon_imu.yaml"
 
-# RAFT Checkpoints
-stereo_checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raftstereo-sceneflow.pth"
+# RAFT Checkpoint
 flow_checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-things.pth"
+
+
 
 single_frame = True
 
@@ -48,7 +61,6 @@ img_idx = 960
 # img_idx = 2000
 # img_idx = 2800
 
-ghosting = False
 z_labels = False
 
 # Multi frame params
@@ -67,8 +79,15 @@ params = StereoParamsYAML(yaml_file)
 # Initialize rectification
 rectification = StereoRectification(params)
 
-# Initialize RAFT-Stereo for disparity
-disparity_solver = DisparityRAFT(stereo_checkpoint, rectification)
+# Stereo for disparity
+if disparity_type is Solver.RAFT:
+    stereo_checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raftstereo-sceneflow.pth"
+    disparity_solver = DisparityRAFT(stereo_checkpoint, rectification, 16) #32
+
+if disparity_type is Solver.AANET:
+    stereo_checkpoint = "/home/roman/Rainbow/visual_odometry/models/aanet/aanet_sceneflow-5aa5a24e.pth"
+    disparity_solver = DisparityAANet(stereo_checkpoint, rectification)
+
 depth_solver = StereoDepth(params)
 
 # Initialize RAFT for optical flow

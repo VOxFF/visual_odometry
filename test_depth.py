@@ -32,7 +32,7 @@ class Solver(Enum):
     RAFT = auto()
     AANET = auto()
 
-disparity_type = Solver.AANET
+disparity_type = Solver.RAFT
 
 # Outdoor dataset
 #dataset_path = "/home/roman/Downloads/fpv_datasets/outdoor_forward_1_snapdragon_with_gt/"
@@ -77,7 +77,7 @@ mask = None
 single_frame = True  # Set to True for testing a single frame
 
 # Multi-frame options
-render_images = True
+render_images = False
 compose_video = True
 limit = 0  # Set to None for full dataset
 
@@ -194,6 +194,20 @@ else:
         ]
 
         # Generate stacked video
-        make_stacked_video(dataset_path, left_files, "depth_video.mp4", transformations)
+        make_stacked_video(dataset_path, left_files, "depth_video.mp4", transformations, 25, (2, 2))
+
+        # Define transformation lambdas
+        # transformations = [
+        #     lambda x: x,  # Original image
+        #     lambda x: x.replace("_0.png", "_1.png"),  # Right image
+        #     lambda x: f"out_disp/{int(x.split('_')[-1].split('.')[0])}_disparity.png",  # Disparity image
+        #     lambda x: f"out_depth/{int(x.split('_')[-1].split('.')[0])}_depth.png",  # Depht image
+        #     lambda x: f"out_disp_aanet/{int(x.split('_')[-1].split('.')[0])}_disparity.png",  # Disparity image
+        #     lambda x: f"out_depth_aanet/{int(x.split('_')[-1].split('.')[0])}_depth.png"  # Depht image
+        # ]
+        #
+        # # Generate stacked video
+        # make_stacked_video(dataset_path, left_files, "depth_video.mp4", transformations, 25, (3, 2),
+        #                    [None, None, "Disparity RAFT", "Depth RAFT", "Disparity AANET", "Depth AANET"])
 
 print("Processing complete.")

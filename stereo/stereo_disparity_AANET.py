@@ -17,8 +17,8 @@ from stereo.stereo_rectification import StereoRectificationInterface
 #import external.aanet.nets as nets
 import external.aanet.nets as nets
 from external.aanet.dataloader import transforms
-from external.aanet.utils import utils
-from external.aanet.utils.file_io import read_img
+from external.aanet.aa_utils import utils
+from external.aanet.aa_utils.file_io import read_img
 
 class DisparityAANet(StereoDisparityInterface):
     """
