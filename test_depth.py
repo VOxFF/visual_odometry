@@ -56,6 +56,7 @@ rectification = StereoRectification(params)
 # Pass rectification to Disparity Solver
 if disparity_type is Solver.RAFT:
     checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raftstereo-sceneflow.pth"
+    #checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raftstereo-eth3d.pth"
     disparity_solver = DisparityRAFT(checkpoint, rectification, 16) #32
 
 if disparity_type is Solver.AANET:
