@@ -38,6 +38,11 @@ class StereoRectification(StereoRectificationInterface):
         self.map1_l, self.map2_l = cv2.initUndistortRectifyMap(K_l, D_l, self.R1, self.P1, size, cv2.CV_32FC1)
         self.map1_r, self.map2_r = cv2.initUndistortRectifyMap(K_r, D_r, self.R2, self.P2, size, cv2.CV_32FC1)
 
+        # Bug 1 fix: push rectified intrinsics back into params so get_camera_params()
+        # returns the correct K for back-projecting pixels in the rectified image.
+        if hasattr(self.params, 'set_rectified_params'):
+            self.params.set_rectified_params(self.P1, self.P2)
+
     def rectify_images(self, img_left, img_right):
         """
         Rectifies the input stereo images and ensures rectification masks are computed.
