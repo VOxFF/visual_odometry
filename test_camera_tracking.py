@@ -41,6 +41,7 @@ from utilities.plot_3d import TrajectoryPlot
 
 dataset_path = "/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/"
 yaml_file = "/home/roman/Downloads/fpv_datasets/indoor_forward_calib_snapdragon/indoor_forward_calib_snapdragon_imu.yaml"
+output_path = "/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/run_bug_fixed/"
 
 # RAFT checkpoints
 stereo_checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raftstereo-sceneflow.pth"
@@ -82,11 +83,12 @@ pts_flow = Keypoints3DFlow(params.get_camera_params(StereoParamsInterface.Stereo
 cam_estimator = CameraRansacXform()
 
 # Prepare file and folder paths.
-traj_txt_path = os.path.join(dataset_path, "camera_trajectory.txt")
+os.makedirs(output_path, exist_ok=True)
+traj_txt_path = os.path.join(output_path, "camera_trajectory.txt")
 truth_txt_path = os.path.join(dataset_path, "groundtruth.txt")
-traj_img_dir = os.path.join(dataset_path, "out_traj")
+traj_img_dir = os.path.join(output_path, "out_traj")
 os.makedirs(traj_img_dir, exist_ok=True)
-output_dir = os.path.join(dataset_path, "out_cam_tracking")
+output_dir = os.path.join(output_path, "out_cam_tracking")
 os.makedirs(output_dir, exist_ok=True)
 
 # Read left image filenames.
@@ -207,7 +209,13 @@ if compute_trajectory:
         T_rel[:3, 3] = t_rel
 
         # Update the global camera pose.
-        T_global = T_global @ T_rel
+        # T_rel maps old camera frame -> new camera frame (world-to-camera relative).
+        # T_global is camera-to-world, so it updates with the inverse of T_rel.
+        # T_global = T_global @ T_rel  # Bug 3: inverts the trajectory
+        T_rel_inv = np.eye(4)
+        T_rel_inv[:3, :3] = R_rel.T
+        T_rel_inv[:3, 3] = -R_rel.T @ t_rel
+        T_global = T_global @ T_rel_inv
 
         # Write the current frame's transformation to file.
         R_flat = R_rel.flatten()
@@ -270,8 +278,12 @@ if render_images:
                 T_rel[:3, :3] = R_rel
                 T_rel[:3, 3] = t_rel
 
-                # Update the global transformation: T_global = T_global * T_rel.
-                T_global = T_global @ T_rel
+                # Update the global transformation.
+                # T_global = T_global @ T_rel  # Bug 3: inverts the trajectory
+                T_rel_inv = np.eye(4)
+                T_rel_inv[:3, :3] = R_rel.T
+                T_rel_inv[:3, 3] = -R_rel.T @ t_rel
+                T_global = T_global @ T_rel_inv
 
                 cam_pos = T_global[:3, 3].copy()  # original camera position
                 R_cam = T_global[:3, :3]  # original rotation matrix
@@ -328,10 +340,10 @@ if compose_movie:
     # First column: original left image (using dataset_path and the file name from left_files)
     # Second column: trajectory plot from traj_img_dir.
     transformations = [
-        lambda x: os.path.join(dataset_path, x),  # Original left image path.
+        lambda x: x,  # Original left image path (relative to dataset_path).
         lambda x: os.path.join(traj_img_dir, f"traj_{int(x.split('_')[-1].split('.')[0]):06d}.png"),
     ]
-    make_stacked_video(dataset_path, left_files, "cam_tracking_video.mp4", transformations)
-    print(f"Movie composed as {dataset_path}/cam_tracking_video.mp4")
+    make_stacked_video(dataset_path, left_files, os.path.join(output_path, "cam_tracking_video.mp4"), transformations)
+    print(f"Movie composed as {os.path.join(output_path, 'cam_tracking_video.mp4')}")
 
 print("Processing complete.")
