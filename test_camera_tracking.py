@@ -33,6 +33,7 @@ from utilities.video_composition import make_stacked_video
 from utilities.data_utils import match_ground_truth_positions
 from utilities.data_utils import read_ground_truth_positions
 from utilities.data_utils import read_ground_truth_transforms
+from imu.imu_YAML import YamlIMU
 from utilities.plot_3d import TrajectoryPlot
 
 # ------------------------------
@@ -41,7 +42,7 @@ from utilities.plot_3d import TrajectoryPlot
 
 dataset_path = "/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/"
 yaml_file = "/home/roman/Downloads/fpv_datasets/indoor_forward_calib_snapdragon/indoor_forward_calib_snapdragon_imu.yaml"
-output_path = "/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/run_bug_fixed/"
+output_path = "/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/run_bug_fixed_v4/"
 
 # RAFT checkpoints
 stereo_checkpoint = "/home/roman/Rainbow/visual_odometry/models/raft-stereo/raftstereo-sceneflow.pth"
@@ -252,10 +253,12 @@ if render_images:
     T_global = np.eye(4)
     global_positions = []   # to store camera positions
     global_Ts = []          # to store full 4x4 transformation matrices
-    # matrix for z/z swap  [x, y, z] into [x, z, –y].
-    M = np.array([[1, 0, 0],
-                  [0, 0, 1],
-                  [0, -1, 0]])
+
+    # Get the rotation that maps camera optical frame into world frame at t=0.
+    # On a real drone this comes from the IMU's initial attitude + camera-IMU extrinsic.
+    # Here YamlIMU reads both from the calibration YAML and the GT file as a proxy.
+    imu = YamlIMU(yaml_file, left_txt, truth_txt_path)
+    R_cam_in_world = imu.get_initial_pose()
 
     print("Rendering images")
     with open(traj_txt_path, 'r') as f:
@@ -285,11 +288,11 @@ if render_images:
                 T_rel_inv[:3, 3] = -R_rel.T @ t_rel
                 T_global = T_global @ T_rel_inv
 
-                cam_pos = T_global[:3, 3].copy()  # original camera position
-                R_cam = T_global[:3, :3]  # original rotation matrix
+                cam_pos = T_global[:3, 3].copy()
+                R_cam   = T_global[:3, :3]
 
-                world_pos = M @ cam_pos  # convert translation
-                R_world = M @ R_cam @ M.T  # convert rotation (note: for a permutation matrix, M.T == M⁻¹)
+                world_pos = R_cam_in_world @ cam_pos
+                R_world   = R_cam_in_world @ R_cam @ R_cam_in_world.T
 
                 T_world = np.eye(4)
                 T_world[:3, :3] = R_world
@@ -299,36 +302,52 @@ if render_images:
                 global_Ts.append(T_world)
 
 
-    # Get the combined trajectory (list of tuples) by matching ground truth.
-
+    # Match computed positions to ground truth by timestamp.
+    # match_ground_truth_positions uses the image timestamps from left_images.txt and finds
+    # the nearest GT entry within a tolerance window. Frames with no close GT match
+    # get gt=None — we filter those out rather than filling with a [0,0,0] sentinel,
+    # which would cause phantom trajectory jumps.
     combined_positions = match_ground_truth_positions(global_positions, left_txt, truth_txt_path)
 
-    if False:
-        global_positions = read_ground_truth_positions(truth_txt_path, skip=20)
-        global_Ts = read_ground_truth_transforms(truth_txt_path, skip=20)
+    # Keep only frames where GT was matched, and carry the corresponding T matrices.
+    # valid_indices tracks which original frame indices survive the GT filter so we can
+    # later map them back to the correct left image files for the movie.
+    valid_indices = [i for i, (_, gt) in enumerate(combined_positions) if gt is not None]
+    valid_pairs   = [combined_positions[i] for i in valid_indices]
+    valid_Ts      = [global_Ts[i] for i in valid_indices]
+    print(f"Frames with GT match: {len(valid_pairs)} / {len(combined_positions)}")
 
-    if len(global_positions) > 0:
+    if len(valid_pairs) > 0:
+        # Origin-align both trajectories so they start at (0, 0, 0).
+        # The estimated trajectory lives in the camera's local frame and the GT lives
+        # in the mocap world frame — their absolute origins are unrelated. Subtracting
+        # each trajectory's first position makes shape and scale directly comparable.
+        first_est = valid_pairs[0][0].copy()
+        first_gt  = valid_pairs[0][1].copy()
+
+        # Both trajectories are now in the same world frame — no additional rotation needed.
+        aligned_pairs = [(comp - first_est, gt - first_gt) for comp, gt in valid_pairs]
+
+        # Apply the same origin shift to the 4x4 pose matrices so the camera frustum
+        # in the 3D plot is drawn at the correct aligned position.
+        for T in valid_Ts:
+            T[:3, 3] -= first_est
+
         print("Rendering trajectory images with fixed scale...")
-
-        # Create an instance of your TrajectoryPlot class.
-        # tp = TrajectoryPlot(global_positions, elevation=elevation, azimuth=azimuth,
-        #                     zoom_distance=zoom_distance, small_font_size=small_font_size)
-
-        tp = TrajectoryPlot(combined_positions, elevation=elevation, azimuth=azimuth,
+        tp = TrajectoryPlot(aligned_pairs, elevation=elevation, azimuth=azimuth,
                             zoom_distance=zoom_distance, small_font_size=small_font_size)
 
-        # For each frame, render the trajectory up to that frame using its full transformation.
-        for idx in range(len(global_positions)):
-            current_T = global_Ts[idx]  # Use the transformation for the current frame.
+        for idx in range(len(aligned_pairs)):
+            current_T = valid_Ts[idx]
             fig = tp.plot(current_T, idx)
             plot_path = os.path.join(traj_img_dir, f"traj_{idx:06d}.png")
             fig.savefig(plot_path)
             plt.close(fig)
 
             if idx % 20 == 0:
-                print(f"Rendered trajectory image for frame {idx + 1} / {len(global_positions)}")
+                print(f"Rendered trajectory image for frame {idx + 1} / {len(aligned_pairs)}")
     else:
-        print("No global positions available for trajectory rendering.")
+        print("No frames with GT match found — check timestamps and tolerance.")
 
 
 # ------------------------------
@@ -336,14 +355,24 @@ if render_images:
 # ------------------------------
 if compose_movie:
     print("Composing movie from tracking outputs.")
-    # Define transformation lambdas:
-    # First column: original left image (using dataset_path and the file name from left_files)
-    # Second column: trajectory plot from traj_img_dir.
+
+    # Only include left images that have a corresponding trajectory plot.
+    # valid_indices was built during rendering: it contains the original frame indices
+    # that had a GT timestamp match, so these are the only frames with a saved traj_*.png.
+    valid_image_files = [left_files[i] for i in valid_indices]
+
+    # Trajectory images are saved as traj_000000.png, traj_000001.png, ... in sequential
+    # order regardless of the original frame index. Build a dict that maps each left image
+    # filename to its sequential traj index so the lambda below can look it up by name.
+    img_to_traj_idx = {f: idx for idx, f in enumerate(valid_image_files)}
+
+    # Two-column layout: left camera image | trajectory plot for that frame.
+    # make_stacked_video passes each filename to each lambda and stacks the results side-by-side.
     transformations = [
-        lambda x: x,  # Original left image path (relative to dataset_path).
-        lambda x: os.path.join(traj_img_dir, f"traj_{int(x.split('_')[-1].split('.')[0]):06d}.png"),
+        lambda x: x,                                                                   # col 1: left image (path relative to dataset_path)
+        lambda x: os.path.join(traj_img_dir, f"traj_{img_to_traj_idx[x]:06d}.png"),  # col 2: matching trajectory plot
     ]
-    make_stacked_video(dataset_path, left_files, os.path.join(output_path, "cam_tracking_video.mp4"), transformations)
+    make_stacked_video(dataset_path, valid_image_files, os.path.join(output_path, "cam_tracking_video.mp4"), transformations)
     print(f"Movie composed as {os.path.join(output_path, 'cam_tracking_video.mp4')}")
 
 print("Processing complete.")

@@ -8,6 +8,8 @@ models/
 
 #PyCharm 
 .idea/
+.codex
+.codex/
 
 # C extensions
 *.so
