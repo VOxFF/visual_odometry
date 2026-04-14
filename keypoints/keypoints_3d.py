@@ -33,20 +33,22 @@ class Keypoints3DXform(Keypoints3DInterface):
         Returns:
             np.ndarray: An array of shape (N, 3) containing the 3D coordinates (X, Y, Z) for each valid keypoint.
         """
-        points_3D = []
-        # Ensure depth_map is 2D
         if depth_map.ndim != 2:
             raise ValueError("depth_map must be a 2D array.")
-        for (u, v) in keypoints:
-            Z = depth_map[int(v), int(u)]
-            if Z <= 0:
-                points_3D.append([0, 0, 0])
-            else:
-                uv_homogeneous = np.array([u, v, 1.0])
-                xy = self.K_inv @ uv_homogeneous
-                X, Y = xy[:2] * Z
-                points_3D.append([X, Y, Z])
-        return np.array(points_3D)
+
+        us = keypoints[:, 0].astype(int)
+        vs = keypoints[:, 1].astype(int)
+        Z = depth_map[vs, us]
+
+        # Back-project all points at once: K_inv @ [u, v, 1]^T, then scale by depth
+        uv_h = np.column_stack([keypoints, np.ones(len(keypoints))])  # (N, 3)
+        xyz = (self.K_inv @ uv_h.T).T                                  # (N, 3)
+        points_3D = xyz * Z[:, None]
+
+        # Zero out points with invalid (non-positive) depth
+        points_3D[Z <= 0] = 0.0
+
+        return points_3D
 
     def to_2d(self, points_3D: np.ndarray) -> np.ndarray:
         """

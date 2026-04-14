@@ -83,7 +83,8 @@ class StereoParamsYAML(StereoParamsInterface):
         self.T = np.array(data["cam1"]["T_cn_cnm1"])[:3, 3]
         self.resolution = tuple(data["cam0"]["resolution"])
         self.focal_length_px = (self.K_l[0, 0] + self.K_r[0, 0]) / 2  # Average focal length
-        self.baseline = np.linalg.norm(self.T)  # Baseline (magnitude of translation vector)
+        # self.baseline = np.linalg.norm(self.T)  # Bug 2: norm(T) overestimates when T has Y/Z components
+        self.baseline = abs(self.T[0])  # Baseline (horizontal separation after rectification)
 
     def _intrinsic_matrix(self, intrinsics):
         """ Helper function to convert intrinsics to a 3x3 matrix. """
@@ -98,9 +99,24 @@ class StereoParamsYAML(StereoParamsInterface):
         """ Returns the stereo camera baseline. """
         return self.baseline
 
+    def set_rectified_params(self, P1: np.ndarray, P2: np.ndarray):
+        """
+        Store the rectified intrinsic matrices (from StereoRectification).
+        Must be called after rectification is computed so that get_camera_params()
+        returns the correct K for back-projecting pixels in the rectified image.
+
+        Args:
+            P1 (np.ndarray): 3x4 rectified projection matrix for the left camera.
+            P2 (np.ndarray): 3x4 rectified projection matrix for the right camera.
+        """
+        self.K_l_rect = P1[:3, :3]
+        self.K_r_rect = P2[:3, :3]
+
     def get_camera_params(self, camera: "StereoParamsInterface.StereoCamera"):
         """
         Returns the camera parameters for the specified camera.
+        Returns rectified intrinsics if set_rectified_params() has been called,
+        otherwise falls back to the original (pre-rectification) intrinsics.
 
         Args:
             camera (StereoParamsInterface.StereoCamera): The camera side (LEFT or RIGHT).
@@ -109,9 +125,14 @@ class StereoParamsYAML(StereoParamsInterface):
             CameraParameters: An instance containing the parameters of the selected camera.
         """
         if camera == StereoParamsInterface.StereoCamera.LEFT:
-            return CameraParameters(self.K_l, self.D_l, self.resolution)
+            # Bug 1 fix: use rectified K from P1 instead of original K_l
+            K = getattr(self, 'K_l_rect', self.K_l)
+            # K = self.K_l  # Bug 1: original pre-rectification intrinsics
+            return CameraParameters(K, self.D_l, self.resolution)
         elif camera == StereoParamsInterface.StereoCamera.RIGHT:
-            return CameraParameters(self.K_r, self.D_r, self.resolution)
+            K = getattr(self, 'K_r_rect', self.K_r)
+            # K = self.K_r  # Bug 1: original pre-rectification intrinsics
+            return CameraParameters(K, self.D_r, self.resolution)
         else:
             raise ValueError(f"Invalid camera side: {camera}")
 

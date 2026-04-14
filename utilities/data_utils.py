@@ -142,7 +142,7 @@ def match_ground_truth_positions(computed_positions, image_list_path, gt_file_pa
             gt_position = np.array([gt_row['tx'], gt_row['ty'], gt_row['tz']])
             print(f"Index {i}: Image timestamp {img_ts:.3f} matched with GT timestamp {df_gt.loc[idx_closest]['timestamp']:.3f} (diff: {min_diff:.3f}s)")
         else:
-            gt_position = np.array([0, 0, 0])
+            gt_position = None  # no GT available for this frame
             print(f"Index {i}: No GT within tolerance for image timestamp {img_ts:.3f} (min diff: {min_diff:.3f}s > tol {tolerance})")
 
         results.append((np.array(comp_pos), gt_position))

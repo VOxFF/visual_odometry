@@ -38,6 +38,11 @@ class StereoRectification(StereoRectificationInterface):
         self.map1_l, self.map2_l = cv2.initUndistortRectifyMap(K_l, D_l, self.R1, self.P1, size, cv2.CV_32FC1)
         self.map1_r, self.map2_r = cv2.initUndistortRectifyMap(K_r, D_r, self.R2, self.P2, size, cv2.CV_32FC1)
 
+        # Bug 1 fix: push rectified intrinsics back into params so get_camera_params()
+        # returns the correct K for back-projecting pixels in the rectified image.
+        if hasattr(self.params, 'set_rectified_params'):
+            self.params.set_rectified_params(self.P1, self.P2)
+
     def rectify_images(self, img_left, img_right):
         """
         Rectifies the input stereo images and ensures rectification masks are computed.
@@ -92,7 +97,7 @@ class StereoRectification(StereoRectificationInterface):
         Returns:
             tuple: (R1, R2, P1, P2, Q)
         """
-        if None in [self.R1, self.R2, self.P1, self.P2, self.Q]:
+        if any(x is None for x in [self.R1, self.R2, self.P1, self.P2, self.Q]):
             raise RuntimeError("Rectification matrices have not been computed yet.")
         return self.R1, self.R2, self.P1, self.P2, self.Q
 
@@ -123,14 +128,14 @@ class StereoRectification(StereoRectificationInterface):
         self.stereo_mask = cv2.erode(self.stereo_mask.astype(np.uint8), kernel, iterations=1).astype(bool)
 
         # Compute ROI Mask (region of interest from stereoRectify)
-        self.roi_mask = np.zeros_like(self.stereo_mask, dtype=np.uint8)
+        self.roi_mask = np.zeros_like(self.stereo_mask, dtype=bool)
         roi1, roi2 = cv2.stereoRectify(
             self.params.K_l, self.params.D_l, self.params.K_r, self.params.D_r,
             (w, h), self.params.R, self.params.T, flags=cv2.CALIB_ZERO_DISPARITY
         )[5:7]
 
-        self.roi_mask[roi1[1]:roi1[1] + roi1[3], roi1[0]:roi1[0] + roi1[2]] = 1
-        self.roi_mask[roi2[1]:roi2[1] + roi2[3], roi2[0]:roi2[0] + roi2[2]] = 1
+        self.roi_mask[roi1[1]:roi1[1] + roi1[3], roi1[0]:roi1[0] + roi1[2]] = True
+        self.roi_mask[roi2[1]:roi2[1] + roi2[3], roi2[0]:roi2[0] + roi2[2]] = True
 
 
 
