@@ -6,7 +6,7 @@ invalid depth handling, to_3d / to_2d roundtrip.
 """
 import numpy as np
 import pytest
-from keypoints.keypoints_3d import Keypoints3DXform
+from modules.keypoints.keypoints_3d import Keypoints3DXform
 from tests.conftest import MockCameraParams
 
 

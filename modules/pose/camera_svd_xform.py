@@ -1,4 +1,4 @@
-from camera.camera_interfaces import CameraXformInterface
+from modules.pose.camera_interfaces import CameraXformInterface
 import numpy as np
 
 class CameraSvdXform(CameraXformInterface):

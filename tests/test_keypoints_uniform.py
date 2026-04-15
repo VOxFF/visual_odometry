@@ -5,7 +5,7 @@ Covers: count, mask filtering, margin, output shape/dtype.
 """
 import numpy as np
 import pytest
-from keypoints.keypoints_uniform import UniformKeyPoints
+from modules.keypoints.keypoints_uniform import UniformKeyPoints
 
 
 @pytest.fixture

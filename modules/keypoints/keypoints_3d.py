@@ -1,6 +1,6 @@
 import numpy as np
-from stereo.stereo_interfaces import CameraParametersInterface
-from keypoints.keypoints_interfaces import Keypoints3DInterface
+from modules.stereo.stereo_interfaces import CameraParametersInterface
+from modules.keypoints.keypoints_interfaces import Keypoints3DInterface
 
 class Keypoints3DXform(Keypoints3DInterface):
     """

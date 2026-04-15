@@ -1,8 +1,8 @@
 import numpy as np
 from typing import Tuple
-from keypoints.keypoints_interfaces import Keypoints3DInterface
-from keypoints.keypoints_interfaces  import Keypoints3DFlowInterface
-from stereo.stereo_interfaces import CameraParametersInterface
+from modules.keypoints.keypoints_interfaces import Keypoints3DInterface
+from modules.keypoints.keypoints_interfaces  import Keypoints3DFlowInterface
+from modules.stereo.stereo_interfaces import CameraParametersInterface
 
 
 class Keypoints3DFlow(Keypoints3DFlowInterface):

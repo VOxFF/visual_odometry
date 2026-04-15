@@ -2,11 +2,11 @@ import yaml
 import numpy as np
 import os
 import json
-from stereo.stereo_interfaces import CameraParametersInterface
-from stereo.stereo_interfaces import StereoParamsInterface
+from modules.stereo.stereo_interfaces import CameraParametersInterface
+from modules.stereo.stereo_interfaces import StereoParamsInterface
 
 import numpy as np
-from stereo.stereo_interfaces import CameraParametersInterface
+from modules.stereo.stereo_interfaces import CameraParametersInterface
 
 
 class CameraParameters(CameraParametersInterface):

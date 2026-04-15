@@ -7,8 +7,8 @@ and error handling for bad inputs.
 """
 import numpy as np
 import pytest
-from stereo.stereo_params_YAML import StereoParamsYAML
-from stereo.stereo_interfaces import StereoParamsInterface
+from modules.stereo.stereo_params_YAML import StereoParamsYAML
+from modules.stereo.stereo_interfaces import StereoParamsInterface
 
 
 # ---------------------------------------------------------------------------
