@@ -8,6 +8,30 @@
       name="description"
       content="Flight Path is a modular, Python-based visual odometry project combining deep learning and classical geometry."
     >
+    <link rel="canonical" href="https://voxff.github.io/flight-path/">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Flight Path">
+    <meta property="og:title" content="Flight Path">
+    <meta
+      property="og:description"
+      content="A modular visual odometry project combining RAFT-based flow, stereo disparity, and classical camera pose estimation."
+    >
+    <meta property="og:url" content="https://voxff.github.io/flight-path/">
+    <meta
+      property="og:image"
+      content="https://voxff.github.io/flight-path/assets/camera_tracking.png"
+    >
+    <meta property="og:image:alt" content="Camera tracking visualization from Flight Path">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Flight Path">
+    <meta
+      name="twitter:description"
+      content="A modular visual odometry project combining RAFT-based flow, stereo disparity, and classical camera pose estimation."
+    >
+    <meta
+      name="twitter:image"
+      content="https://voxff.github.io/flight-path/assets/camera_tracking.png"
+    >
     <style>
       :root {
         --bg: #eef3f0;
@@ -153,6 +177,43 @@
         line-height: 1.5;
       }
 
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 24px;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 46px;
+        padding: 0 18px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        text-decoration: none;
+        transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+      }
+
+      .button:hover {
+        transform: translateY(-1px);
+      }
+
+      .button-primary {
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+        color: #f7fbf9;
+        box-shadow: 0 12px 24px rgba(22, 78, 99, 0.22);
+      }
+
+      .button-secondary {
+        background: var(--panel-strong);
+        border-color: var(--border);
+        color: var(--text);
+      }
+
       @media (max-width: 640px) {
         .shell {
           width: min(100% - 20px, 1080px);
@@ -201,6 +262,10 @@
             </div>
           </div>
         </div>
+        <div class="actions">
+          <a class="button button-primary" href="https://github.com/VOxFF/flight-path">View Repository</a>
+          <a class="button button-secondary" href="https://fpv.ifi.uzh.ch/datasets-backup/">Browse Dataset</a>
+        </div>
         <figure>
           <img src="./assets/camera_tracking.png" alt="Camera tracking visualization">
           <figcaption>Camera tracking output from the current pipeline.</figcaption>
@@ -223,6 +288,10 @@
             README, but uses a dedicated HTML layout for GitHub Pages. Update
             this file if you want the public site to diverge from the GitHub
             landing page later.
+          </p>
+          <p class="intro">
+            Source code:
+            <a href="https://github.com/VOxFF/flight-path">github.com/VOxFF/flight-path</a>
           </p>
         </section>
       </div>
