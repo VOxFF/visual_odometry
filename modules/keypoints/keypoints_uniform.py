@@ -1,5 +1,5 @@
 import numpy as np
-from keypoints.keypoints_interfaces import KeyPointsInterface
+from modules.keypoints.keypoints_interfaces import KeyPointsInterface
 
 class UniformKeyPoints(KeyPointsInterface):
     """

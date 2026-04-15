@@ -6,8 +6,8 @@ and compute_3d_flow (depth validity, output shape, valid mask).
 """
 import numpy as np
 import pytest
-from keypoints.keypoints_3d import Keypoints3DXform
-from keypoints.keypoints_3d_flow import Keypoints3DFlow
+from modules.keypoints.keypoints_3d import Keypoints3DXform
+from modules.keypoints.keypoints_3d_flow import Keypoints3DFlow
 from tests.conftest import MockCameraParams
 
 

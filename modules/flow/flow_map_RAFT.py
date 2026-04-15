@@ -13,8 +13,8 @@ from PIL import Image
 from flow_core.utils.utils import InputPadder
 from flow_core.utils import flow_viz
 from flow_core.raft import RAFT  # Optical Flow RAFT
-from stereo.stereo_interfaces import StereoRectificationInterface
-from flow.flow_interfaces import OpticalFlowInterface
+from modules.stereo.stereo_interfaces import StereoRectificationInterface
+from modules.flow.flow_interfaces import OpticalFlowInterface
 
 
 class OpticalFlowRAFT(OpticalFlowInterface):

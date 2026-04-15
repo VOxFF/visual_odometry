@@ -11,8 +11,8 @@ from K_l after rectification.
 import numpy as np
 import pytest
 import cv2
-from stereo.stereo_params_YAML import StereoParamsYAML
-from stereo.stereo_rectification import StereoRectification
+from modules.stereo.stereo_params_YAML import StereoParamsYAML
+from modules.stereo.stereo_rectification import StereoRectification
 
 # ---------------------------------------------------------------------------
 # Synthetic calibration — two cameras with different principal points

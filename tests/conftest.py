@@ -3,7 +3,7 @@ Shared fixtures for the visual odometry test suite.
 """
 import numpy as np
 import pytest
-from stereo.stereo_interfaces import CameraParametersInterface, StereoParamsInterface
+from modules.stereo.stereo_interfaces import CameraParametersInterface, StereoParamsInterface
 
 
 class MockCameraParams(CameraParametersInterface):

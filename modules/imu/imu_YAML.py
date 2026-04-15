@@ -2,7 +2,7 @@ import yaml
 import numpy as np
 import pandas as pd
 
-from imu.imu_interfaces import IMUInterface
+from modules.imu.imu_interfaces import IMUInterface
 
 
 class YamlIMU(IMUInterface):

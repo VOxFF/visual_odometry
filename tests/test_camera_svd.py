@@ -7,7 +7,7 @@ edge cases (identity, reflection, minimal point sets).
 import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
-from camera.camera_svd_xform import CameraSvdXform, CameraRansacXform
+from modules.pose.camera_svd_xform import CameraSvdXform, CameraRansacXform
 
 
 # ---------------------------------------------------------------------------

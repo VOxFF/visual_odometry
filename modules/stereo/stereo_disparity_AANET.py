@@ -9,8 +9,8 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 
-from stereo.stereo_interfaces import StereoDisparityInterface
-from stereo.stereo_rectification import StereoRectificationInterface
+from modules.stereo.stereo_interfaces import StereoDisparityInterface
+from modules.stereo.stereo_rectification import StereoRectificationInterface
 
 
 # Import the AANet modules from the external submodule (assumed to be in /external)

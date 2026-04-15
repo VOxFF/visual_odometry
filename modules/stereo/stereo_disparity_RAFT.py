@@ -13,7 +13,7 @@ from PIL import Image
 
 from stereo_core.utils.utils import InputPadder
 from stereo_core.raft_stereo import RAFTStereo
-from stereo.stereo_interfaces import StereoDisparityInterface, StereoRectificationInterface
+from modules.stereo.stereo_interfaces import StereoDisparityInterface, StereoRectificationInterface
 
 class DisparityRAFT(StereoDisparityInterface):
     def __init__(self, checkpoint: str, rectification: StereoRectificationInterface = None, iters: int = 32):

@@ -6,7 +6,7 @@ invalid-disparity masking, edge cases.
 """
 import numpy as np
 import pytest
-from stereo.stereo_depth import StereoDepth
+from modules.stereo.stereo_depth import StereoDepth
 
 
 @pytest.fixture
