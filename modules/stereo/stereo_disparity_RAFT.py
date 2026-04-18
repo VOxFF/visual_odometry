@@ -16,7 +16,7 @@ from stereo_core.raft_stereo import RAFTStereo
 from modules.stereo.stereo_interfaces import StereoDisparityInterface, StereoRectificationInterface
 
 class DisparityRAFT(StereoDisparityInterface):
-    def __init__(self, checkpoint: str, rectification: StereoRectificationInterface = None, iters: int = 32):
+    def __init__(self, checkpoint: str, rectification: StereoRectificationInterface = None, iters: int = 32, warmstart: bool = False):
         """
         Initializes RAFT-Stereo-based disparity computation with optional rectification.
 
@@ -27,8 +27,9 @@ class DisparityRAFT(StereoDisparityInterface):
         """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.iters = iters
-        self.flow = None  # ✅ Stores flow for next frame propagation
-        self.rectification = rectification  # ✅ Store rectification instance
+        self.warmstart = warmstart
+        self.flow = None
+        self.rectification = rectification
 
         self.args = argparse.Namespace(
             hidden_dims=[128, 128, 128],
@@ -81,17 +82,22 @@ class DisparityRAFT(StereoDisparityInterface):
         padder = InputPadder(image1.shape, divis_by=32)
         image1, image2 = padder.pad(image1, image2)
 
-        # Ensure `self.flow` is correctly sized
-        if self.flow is not None:
+        # Warm-start: use previous frame's disparity as flow_init (optional).
+        # flow_init must be (N, 2, H//4, W//4): channel 0 = horizontal disparity/4, channel 1 = 0.
+        flow_init = None
+        if self.warmstart and self.flow is not None:
             H, W = image1.shape[2], image1.shape[3]
-            self.flow = torch.zeros(1, 2, H // 4, W // 4, device=image1.device)
-            self.flow = self.flow.to(image1.device)
+            disp_small = torch.nn.functional.interpolate(
+                self.flow.unsqueeze(0).unsqueeze(0), size=(H // 4, W // 4), mode='bilinear', align_corners=False
+            ) / 4.0  # shape: (1, 1, H//4, W//4)
+            flow_init = torch.cat([disp_small, torch.zeros_like(disp_small)], dim=1)  # (1, 2, H//4, W//4)
+            flow_init = flow_init.to(image1.device)
 
         with torch.no_grad():
-            _, flow_up = self.model(image1, image2, iters=self.iters, flow_init=self.flow, test_mode=True)
+            _, flow_up = self.model(image1, image2, iters=self.iters, flow_init=flow_init, test_mode=True)
             flow_up = padder.unpad(flow_up).squeeze()
 
-        self.flow = flow_up  # Store for next frame propagation
+        self.flow = flow_up  # store full-res disparity for next frame warm-start
         return flow_up.cpu().numpy().squeeze()
 
     def _loadImage(self, image_param):

@@ -18,7 +18,7 @@ from modules.flow.flow_interfaces import OpticalFlowInterface
 
 
 class OpticalFlowRAFT(OpticalFlowInterface):
-    def __init__(self, checkpoint: str, rectification: StereoRectificationInterface = None, iters: int = 32):
+    def __init__(self, checkpoint: str, rectification: StereoRectificationInterface = None, iters: int = 32, warmstart: bool = False):
         """
         Initializes RAFT-based optical flow computation with optional rectification.
 
@@ -29,8 +29,9 @@ class OpticalFlowRAFT(OpticalFlowInterface):
         """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.iters = iters
-        self.flow = None  # Stores flow for next frame propagation
-        self.rectification = rectification  # Store rectification instance
+        self.warmstart = warmstart
+        self.flow = None
+        self.rectification = rectification
 
         # Define RAFT arguments
         self.args = argparse.Namespace(
@@ -71,17 +72,21 @@ class OpticalFlowRAFT(OpticalFlowInterface):
         padder = InputPadder(image1.shape)
         image1, image2 = padder.pad(image1, image2)
 
-        # Ensure `self.flow` is correctly sized
-        if self.flow is not None:
+        # Warm-start: use previous frame's flow as flow_init (optional).
+        # Downsample to RAFT's 1/8-scale feature space; values scaled by 1/8 accordingly.
+        flow_init = None
+        if self.warmstart and self.flow is not None:
             H, W = image1.shape[2], image1.shape[3]
-            self.flow = torch.zeros(1, 2, H // 8, W // 8, device=image1.device)  # ⚡ Changed division from 4 to 8
-            self.flow = self.flow.to(image1.device)
+            flow_init = torch.nn.functional.interpolate(
+                self.flow, size=(H // 8, W // 8), mode='bilinear', align_corners=False
+            ) / 8.0
+            flow_init = flow_init.to(image1.device)
 
         with torch.no_grad():
-            _, flow_up = self.model(image1, image2, iters=self.iters, flow_init=self.flow, test_mode=True)
+            _, flow_up = self.model(image1, image2, iters=self.iters, flow_init=flow_init, test_mode=True)
             flow_up = padder.unpad(flow_up).squeeze()
 
-        self.flow = flow_up.unsqueeze(0)  # ✅ Store for next frame propagation
+        self.flow = flow_up.unsqueeze(0)  # store full-res flow for next frame warm-start
         return flow_up.cpu().numpy()
 
         # flow = flow_up.cpu().numpy()

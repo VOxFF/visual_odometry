@@ -1,183 +1,144 @@
+
 import os
 import sys
+import argparse
 
-# Get the absolute path of RAFT (Optical Flow)
-raft_path = os.path.join(os.path.dirname(__file__), "external", "RAFT-Flow")
-sys.path.append(raft_path)  # Add RAFT to Python path
+# ── sys.path setup (mirrors pipeline/pipeline.py) ─────────────────────────────
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
 
-core_path = os.path.join(raft_path, "flow_core")
-sys.path.insert(0, core_path)  # Ensure core modules are found
+def _setup_external_paths(base_dir: str):
+    raft_stereo_path = os.path.join(base_dir, "external", "RAFT-Stereo")
+    raft_flow_path   = os.path.join(base_dir, "external", "RAFT-Flow")
+    core_path        = os.path.join(raft_flow_path, "flow_core")
+    for p in [raft_stereo_path, raft_flow_path]:
+        if p not in sys.path:
+            sys.path.append(p)
+    if core_path not in sys.path:
+        sys.path.insert(0, core_path)
+
+_setup_external_paths(project_root)
+# ──────────────────────────────────────────────────────────────────────────────
 
 import cv2
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from flow.flow_map_RAFT import OpticalFlowRAFT
-from stereo.stereo_params_YAML import StereoParamsYAML
-from stereo.stereo_rectification import StereoRectification
-from utilities.video_composition import make_stacked_video
+
+from config.config import Config
+from modules.flow.flow_map_RAFT import OpticalFlowRAFT
+from modules.stereo.stereo_params_YAML import StereoParamsYAML
+from modules.stereo.stereo_rectification import StereoRectification
+from pipeline.visualization.video_composition import make_stacked_video
 
 
-# Outdoor dataset
-# dataset_path = "/home/roman/Downloads/fpv_datasets/outdoor_forward_1_snapdragon_with_gt/"
-# yaml_file = "/home/roman/Downloads/fpv_datasets/outdoor_forward_calib_snapdragon/camchain-imucam-outdoor_forward_calib_snapdragon_imu.yaml"
+# ── Script-level debug knobs ───────────────────────────────────────────────────
+single_frame   = False   # True = show one frame interactively; False = batch mode
+img_idx        = 960     # frame index used in single-frame mode
+render_images  = True
+compose_video  = True
+# ──────────────────────────────────────────────────────────────────────────────
 
-# Indoor dataset
-dataset_path = "/home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/"
-yaml_file = "/home/roman/Downloads/fpv_datasets/indoor_forward_calib_snapdragon/indoor_forward_calib_snapdragon_imu.yaml"
 
-# RAFT Optical Flow checkpoint
-checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-things.pth"      #good results but noisy for still frames
-#checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-kitti.pth"      #less no motin noise but distorted on normal frames
-#checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-small.pth"      #needs paramter tweaking
-#checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-sintel.pth"     #still noisy for still frames
-#checkpoint = "/home/roman/Rainbow/visual_odometry/models/rart-flow/raft-chairs.pth"     #less noisy for still but confused with shadows
+def main():
+    parser = argparse.ArgumentParser(description="Optical flow visualisation adhoc test")
+    parser.add_argument("--config", required=True, help="Path to YAML config file")
+    args = parser.parse_args()
 
-single_frame = True
+    cfg = Config.from_yaml(args.config)
 
-# Multi-frame options
-render_images = True
-compose_video = True
-limit = 0  # Set to None for full dataset
+    flow_ckpt = cfg.flow_checkpoint if os.path.isabs(cfg.flow_checkpoint) \
+                else os.path.join(project_root, cfg.flow_checkpoint)
 
-# Load calibration parameters
-params = StereoParamsYAML(yaml_file)
+    params        = StereoParamsYAML(cfg.yaml_file)
+    rectification = StereoRectification(params)
+    flow_solver   = OpticalFlowRAFT(flow_ckpt, rectification, cfg.raft_iters, cfg.raft_optflow_warmstart)
 
-# Initialize rectification
-rectification = StereoRectification(params)
-
-# Load Optical Flow Solver (RAFT)
-flow_solver = OpticalFlowRAFT(checkpoint, rectification, 12)
-
-if single_frame:
-    # Select image pair
-    #img_idx = 0
-    #img_idx = 50
-    #img_idx = 600
-    img_idx = 960
-    #img_idx = 1200
-    #img_idx = 2000
-    #img_idx = 2800
-    frame1 = dataset_path + f"img/image_0_{img_idx}.png"
-    frame2 = dataset_path + f"img/image_0_{img_idx+1}.png"  # Next frame in sequence
-
-    # Load raw images
-    img1 = cv2.imread(frame1, cv2.IMREAD_GRAYSCALE)
-    img2 = cv2.imread(frame2, cv2.IMREAD_GRAYSCALE)
-
-    if img1 is None or img2 is None:
-        raise ValueError("One or both images not found. Check file paths.")
-
-    # Compute optical flow
-    flow_uv = flow_solver.compute_flow(img1, img2)
     _, rectification_mask, __, ___ = rectification.get_rectification_masks()
 
-    # Apply rectification mask
-    flow_uv_masked = flow_uv.copy()
-    flow_uv_masked[0][~rectification_mask] = 0 # Use 0 for compuation
-    flow_uv_masked[1][~rectification_mask] = 0 # Use 0 for computation
+    # ── Single frame mode ──────────────────────────────────────────────────────
+    if single_frame:
+        frame1 = os.path.join(cfg.dataset_path, f"img/image_0_{img_idx}.png")
+        frame2 = os.path.join(cfg.dataset_path, f"img/image_0_{img_idx + 1}.png")
 
-    flow_ring = flow_solver.to_image(flow_uv_masked)
+        img1 = cv2.imread(frame1, cv2.IMREAD_GRAYSCALE)
+        img2 = cv2.imread(frame2, cv2.IMREAD_GRAYSCALE)
+        if img1 is None or img2 is None:
+            raise ValueError("One or both images not found. Check file paths.")
 
-    flow_uv_masked[0][~rectification_mask] = np.nan  # Use NaN for visualization
-    flow_uv_masked[1][~rectification_mask] = np.nan  # Use NaN for visualization
+        flow_uv = flow_solver.compute_flow(img1, img2)
 
-    # Visualization
-    fig, axs = plt.subplots(1, 5, figsize=(25, 5))
+        flow_masked = flow_uv.copy()
+        flow_masked[0][~rectification_mask] = 0
+        flow_masked[1][~rectification_mask] = 0
+        flow_ring = flow_solver.to_image(flow_masked)
 
-    axs[0].imshow(img1, cmap="gray")
-    axs[0].set_title("Frame 1")
-    axs[0].axis("off")
+        flow_masked[0][~rectification_mask] = np.nan
+        flow_masked[1][~rectification_mask] = np.nan
 
-    axs[1].imshow(img2, cmap="gray")
-    axs[1].set_title("Frame 2")
-    axs[1].axis("off")
+        fig, axs = plt.subplots(1, 5, figsize=(25, 5))
+        axs[0].imshow(img1, cmap="gray");  axs[0].set_title("Frame 1");        axs[0].axis("off")
+        axs[1].imshow(img2, cmap="gray");  axs[1].set_title("Frame 2");        axs[1].axis("off")
 
-    # Optical Flow U (Horizontal)
-    im_flow_u = axs[2].imshow(flow_uv_masked[0], cmap=None)
-    axs[2].set_title("Optical Flow U")
-    axs[2].axis("off")
-    fig.colorbar(im_flow_u, ax=axs[2], fraction=0.046, pad=0.04)
+        im_u = axs[2].imshow(flow_masked[0])
+        axs[2].set_title("Flow U (horizontal)"); axs[2].axis("off")
+        fig.colorbar(im_u, ax=axs[2], fraction=0.046, pad=0.04)
 
-    # Optical Flow V (Vertical)
-    im_flow_v = axs[3].imshow(flow_uv_masked[1], cmap=None)
-    axs[3].set_title("Optical Flow V")
-    axs[3].axis("off")
-    fig.colorbar(im_flow_v, ax=axs[3], fraction=0.046, pad=0.04)
+        im_v = axs[3].imshow(flow_masked[1])
+        axs[3].set_title("Flow V (vertical)"); axs[3].axis("off")
+        fig.colorbar(im_v, ax=axs[3], fraction=0.046, pad=0.04)
 
-    # Full Optical Flow
-    im_flow = axs[4].imshow(flow_ring, cmap=None)
-    axs[4].set_title("Optical Flow")
-    axs[4].axis("off")
-    fig.colorbar(im_flow, ax=axs[4], fraction=0.046, pad=0.04)
+        axs[4].imshow(flow_ring); axs[4].set_title("Optical Flow"); axs[4].axis("off")
 
-    plt.tight_layout()
-    plt.show()
+        plt.tight_layout()
+        plt.show()
+        return
 
-else:
-    left_txt = dataset_path + "left_images.txt"
-
-    # Read filenames, ignoring comments (#)
-    df_left = pd.read_csv(left_txt, delim_whitespace=True, comment="#", names=["id", "timestamp", "image_name"])
+    # ── Batch mode ─────────────────────────────────────────────────────────────
+    left_txt = os.path.join(cfg.dataset_path, "left_images.txt")
+    df_left  = pd.read_csv(left_txt, sep=r'\s+', comment="#", names=["id", "timestamp", "image_name"])
     left_files = df_left["image_name"].tolist()
+    if cfg.limit:
+        left_files = left_files[:cfg.limit]
 
-    if limit:
-        left_files = left_files[:limit]
-
-    rectification_mask = None
+    out_flow_dir = os.path.join(cfg.output_path, "out_flow")
 
     if render_images:
-        print("Rendering images.")
-
-        os.makedirs(dataset_path + "out_flow/", exist_ok=True)
+        print("Rendering optical flow images.")
+        os.makedirs(out_flow_dir, exist_ok=True)
 
         for i in range(len(left_files) - 1):
-            frame1 = dataset_path + left_files[i]
-            frame2 = dataset_path + left_files[i + 1]
-
-            # Load raw images
-            img1 = cv2.imread(frame1, cv2.IMREAD_GRAYSCALE)
-            img2 = cv2.imread(frame2, cv2.IMREAD_GRAYSCALE)
-
+            img1 = cv2.imread(cfg.dataset_path + left_files[i],     cv2.IMREAD_GRAYSCALE)
+            img2 = cv2.imread(cfg.dataset_path + left_files[i + 1], cv2.IMREAD_GRAYSCALE)
             if img1 is None or img2 is None:
-                print(f"Skipping {frame1} and {frame2} (missing file)")
+                print(f"Skipping frame {i} (missing file).")
                 continue
 
-            # Compute optical flow
             flow_uv = flow_solver.compute_flow(img1, img2)
 
-            if rectification_mask is None:
-                _, rectification_mask, __, ___ = rectification.get_rectification_masks()
+            flow_masked = flow_uv.copy()
+            flow_masked[0][~rectification_mask] = 0
+            flow_masked[1][~rectification_mask] = 0
+            flow_image = flow_solver.to_image(flow_masked)
 
-            # Apply rectification mask
-            flow_uv_masked = flow_uv.copy()
-            flow_uv_masked[0][~rectification_mask] = 0
-            flow_uv_masked[1][~rectification_mask] = 0
-
-            # Convert flow to image representation
-            flow_image = flow_solver.to_image(flow_uv_masked)
-
-            # Extract frame index
             index = int(left_files[i].split("_")[-1].split(".")[0])
-
-            # Save flow visualization
-            plt.imsave(dataset_path + f"out_flow/{index}_flow.png", flow_image, cmap=None)
+            plt.imsave(os.path.join(out_flow_dir, f"{index}_flow.png"), flow_image)
 
             if i % 20 == 0:
-                print(f"Processed {i} of {len(left_files)} frames.")
+                print(f"Processed {i} of {len(left_files) - 1} frames.")
 
     if compose_video:
-        n = len(left_files)
-        left_files = left_files[:n-1]
-
-        # Define transformation lambdas
+        flow_files = left_files[:-1]  # flow[i] = motion from frame i to i+1
         transformations = [
-            lambda x: x,  # Original image
-            lambda x: f"out_flow/{int(x.split('_')[-1].split('.')[0])}_flow.png",
+            lambda x: x,
+            lambda x: os.path.join("out_flow", f"{int(x.split('_')[-1].split('.')[0])}_flow.png"),
         ]
+        make_stacked_video(cfg.dataset_path, flow_files,
+                           os.path.join(cfg.output_path, "flow_video.mp4"),
+                           transformations, 25, (1, 2))
 
-        # Generate stacked video
-        make_stacked_video(dataset_path, left_files, "flow_video.mp4", transformations)
+    print("Processing complete.")
 
 
-print("Processing complete.")
+if __name__ == "__main__":
+    main()

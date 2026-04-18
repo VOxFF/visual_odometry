@@ -27,6 +27,8 @@ class Config:
 
     # RAFT iterations
     raft_iters: int = 16
+    raft_disparity_warmstart: bool = False
+    raft_optflow_warmstart: bool = False
 
     # Plot view
     elevation: float = 90.0
@@ -60,6 +62,8 @@ class Config:
             max_keypoints=params.get('max_keypoints', 320),
             dz_threshold=params.get('dz_threshold', 1.0),
             raft_iters=params.get('raft_iters', 16),
+            raft_disparity_warmstart=params.get('raft_disparity_warmstart', False),
+            raft_optflow_warmstart=params.get('raft_optflow_warmstart', False),
 
             elevation=plot.get('elevation', 90.0),
             azimuth=plot.get('azimuth', 0.0),

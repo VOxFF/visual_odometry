@@ -56,9 +56,9 @@ class CameraTrackingPipeline:
         self.rectification = StereoRectification(self.params)
 
         # Solvers
-        self.disparity_solver = DisparityRAFT(stereo_ckpt, self.rectification, self.cfg.raft_iters)
+        self.disparity_solver = DisparityRAFT(stereo_ckpt, self.rectification, self.cfg.raft_iters, self.cfg.raft_disparity_warmstart)
         self.depth_solver     = StereoDepth(self.params)
-        self.flow_solver      = OpticalFlowRAFT(flow_ckpt, self.rectification, self.cfg.raft_iters)
+        self.flow_solver      = OpticalFlowRAFT(flow_ckpt, self.rectification, self.cfg.raft_iters, self.cfg.raft_optflow_warmstart)
 
         # Keypoints
         stereo_mask, _, _, _ = self.rectification.get_rectification_masks()
