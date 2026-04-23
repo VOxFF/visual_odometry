@@ -135,20 +135,14 @@ def match_ground_truth_positions(computed_positions, image_list_path, gt_file_pa
         min_diff = time_diffs.min()
         idx_closest = time_diffs.idxmin()
 
-        print(f"{i} min diff: {min_diff}");
-
         if min_diff <= tolerance:
             gt_row = df_gt.loc[idx_closest]
             gt_position = np.array([gt_row['tx'], gt_row['ty'], gt_row['tz']])
-            print(f"Index {i}: Image timestamp {img_ts:.3f} matched with GT timestamp {df_gt.loc[idx_closest]['timestamp']:.3f} (diff: {min_diff:.3f}s)")
         else:
-            gt_position = None  # no GT available for this frame
-            print(f"Index {i}: No GT within tolerance for image timestamp {img_ts:.3f} (min diff: {min_diff:.3f}s > tol {tolerance})")
+            gt_position = None
 
         results.append((np.array(comp_pos), gt_position))
 
-    print(f"matches found: {len(results)}")
-
-
-
+    matched = sum(1 for _, gt in results if gt is not None)
+    print(f"GT matches: {matched} / {len(results)}")
     return results
