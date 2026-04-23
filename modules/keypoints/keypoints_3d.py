@@ -1,30 +1,34 @@
 import numpy as np
+from scipy.ndimage import map_coordinates
 from modules.stereo.stereo_interfaces import CameraParametersInterface
 from modules.keypoints.keypoints_interfaces import Keypoints3DInterface
+
+
+def _bilinear_sample(map2d: np.ndarray, us: np.ndarray, vs: np.ndarray) -> np.ndarray:
+    """Bilinear interpolation of a 2D map at float (u, v) coordinates."""
+    return map_coordinates(map2d, [vs, us], order=1, mode='nearest')
+
 
 class Keypoints3DXform(Keypoints3DInterface):
     """
     Implementation of Keypoints3DInterface for converting 2D keypoints to 3D and projecting them back.
     """
 
-    def __init__(self, camera_params: CameraParametersInterface):
+    def __init__(self, camera_params: CameraParametersInterface, subpixel: bool = False):
         """
         Initializes Keypoints3D with camera parameters.
 
         Args:
             camera_params (CameraParametersInterface): The camera intrinsic parameters.
+            subpixel (bool): Use bilinear depth sampling at float coordinates instead of nearest-integer.
         """
         self.camera_params = camera_params
-        self.K_inv = np.linalg.inv(self.camera_params.K)  # Precompute inverse intrinsic matrix
+        self.K_inv = np.linalg.inv(self.camera_params.K)
+        self.subpixel = subpixel
 
     def to_3d(self, keypoints: np.ndarray, depth_map: np.ndarray) -> np.ndarray:
         """
         Converts 2D keypoints to 3D coordinates using the provided 2D depth map and camera intrinsics.
-
-        For each keypoint (u, v), the function retrieves the corresponding depth value Z from the
-        depth_map using the indices [int(v), int(u)]. If Z is positive, the keypoint is transformed
-        into 3D coordinates by applying the inverse of the intrinsic camera matrix and scaling by Z.
-        If Z is non-positive, the function assigns a default value (e.g., [0, 0, 0]) for that keypoint.
 
         Args:
             keypoints (np.ndarray): An array of shape (N, 2) containing 2D keypoints (u, v) in image coordinates.
@@ -36,9 +40,12 @@ class Keypoints3DXform(Keypoints3DInterface):
         if depth_map.ndim != 2:
             raise ValueError("depth_map must be a 2D array.")
 
-        us = keypoints[:, 0].astype(int)
-        vs = keypoints[:, 1].astype(int)
-        Z = depth_map[vs, us]
+        if self.subpixel:
+            Z = _bilinear_sample(depth_map, keypoints[:, 0], keypoints[:, 1])
+        else:
+            us = keypoints[:, 0].astype(int)
+            vs = keypoints[:, 1].astype(int)
+            Z = depth_map[vs, us]
 
         # Back-project all points at once: K_inv @ [u, v, 1]^T, then scale by depth
         uv_h = np.column_stack([keypoints, np.ones(len(keypoints))])  # (N, 3)

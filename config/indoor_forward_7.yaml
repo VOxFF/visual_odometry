@@ -19,6 +19,7 @@ parameters:
   raft_iters:               16
   raft_disparity_warmstart: false
   raft_optflow_warmstart:   false
+  subpixel_keypoints:       true
 
 plot:
   elevation:      90.0

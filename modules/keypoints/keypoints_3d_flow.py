@@ -2,12 +2,13 @@ import numpy as np
 from typing import Tuple
 from modules.keypoints.keypoints_interfaces import Keypoints3DInterface
 from modules.keypoints.keypoints_interfaces  import Keypoints3DFlowInterface
+from modules.keypoints.keypoints_3d import _bilinear_sample
 from modules.stereo.stereo_interfaces import CameraParametersInterface
 
 
 class Keypoints3DFlow(Keypoints3DFlowInterface):
     def __init__(self, camera_params: CameraParametersInterface, keypoints_xform: Keypoints3DInterface,
-                 rectification_mask: np.ndarray):
+                 rectification_mask: np.ndarray, subpixel: bool = False):
         """
         Initializes Keypoints3DFlow.
 
@@ -15,10 +16,12 @@ class Keypoints3DFlow(Keypoints3DFlowInterface):
             camera_params (CameraParametersInterface): Camera intrinsic parameters.
             keypoints_xform (Keypoints3DInterface): Keypoints 3D transformation instance.
             rectification_mask (np.ndarray): Boolean mask (H, W), True for valid rectified regions.
+            subpixel (bool): Use bilinear sampling for flow and depth lookups at float coordinates.
         """
         self.camera_params = camera_params
-        self.keypoints_xform = keypoints_xform  # ✅ Uses Keypoints3DInterface for 3D transformations
+        self.keypoints_xform = keypoints_xform
         self.rectification_mask = rectification_mask
+        self.subpixel = subpixel
 
     def compute_2d_flow(self, keypoints: np.ndarray, uv_flow: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -33,8 +36,13 @@ class Keypoints3DFlow(Keypoints3DFlowInterface):
                 - np.ndarray: Updated keypoints of shape (N, 2).
                 - np.ndarray: Validity mask of shape (N,), True for valid points.
         """
-        uv_flow = np.transpose(uv_flow, (1, 2, 0)) #transpose to W,H,2
-        keypoints_next = keypoints + uv_flow[keypoints[:, 1].astype(int), keypoints[:, 0].astype(int)]
+        uv_flow = np.transpose(uv_flow, (1, 2, 0))  # (H, W, 2)
+        if self.subpixel:
+            du = _bilinear_sample(uv_flow[:, :, 0], keypoints[:, 0], keypoints[:, 1])
+            dv = _bilinear_sample(uv_flow[:, :, 1], keypoints[:, 0], keypoints[:, 1])
+            keypoints_next = keypoints + np.stack([du, dv], axis=1)
+        else:
+            keypoints_next = keypoints + uv_flow[keypoints[:, 1].astype(int), keypoints[:, 0].astype(int)]
 
         # Ensure keypoints remain inside the image bounds
         h, w = uv_flow.shape[:2]
@@ -66,8 +74,12 @@ class Keypoints3DFlow(Keypoints3DFlowInterface):
         keypoints_next, valid_mask = self.compute_2d_flow(keypoints, uv_flow)
 
         # Extract per-keypoint depth values (for validity checking only)
-        depth_vals1 = depth1[keypoints[:, 1].astype(int), keypoints[:, 0].astype(int)]
-        depth_vals2 = depth2[keypoints_next[:, 1].astype(int), keypoints_next[:, 0].astype(int)]
+        if self.subpixel:
+            depth_vals1 = _bilinear_sample(depth1, keypoints[:, 0],      keypoints[:, 1])
+            depth_vals2 = _bilinear_sample(depth2, keypoints_next[:, 0], keypoints_next[:, 1])
+        else:
+            depth_vals1 = depth1[keypoints[:, 1].astype(int), keypoints[:, 0].astype(int)]
+            depth_vals2 = depth2[keypoints_next[:, 1].astype(int), keypoints_next[:, 0].astype(int)]
 
         # Create a valid mask ensuring that both depth values are positive
         depth_valid_mask = valid_mask & (depth_vals1 > 0) & (depth_vals2 > 0)

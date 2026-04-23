@@ -64,8 +64,8 @@ class CameraTrackingPipeline:
         stereo_mask, _, _, _ = self.rectification.get_rectification_masks()
         cam_params = self.params.get_camera_params(StereoParamsInterface.StereoCamera.LEFT)
         self.pts_src   = UniformKeyPoints(stereo_mask)
-        self.pts_xform = Keypoints3DXform(cam_params)
-        self.pts_flow  = Keypoints3DFlow(cam_params, self.pts_xform, stereo_mask)
+        self.pts_xform = Keypoints3DXform(cam_params, self.cfg.subpixel_keypoints)
+        self.pts_flow  = Keypoints3DFlow(cam_params, self.pts_xform, stereo_mask, self.cfg.subpixel_keypoints)
 
         # Pose estimator
         self.cam_estimator = CameraRansacXform()
