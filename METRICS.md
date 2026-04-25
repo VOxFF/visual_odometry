@@ -42,6 +42,24 @@ Both with `subpixel_keypoints: true`.
 
 ---
 
+## More keypoints: 500 vs 320
+
+Uniform grid, `subpixel_keypoints: true`, `min_depth: 0.0`, `max_keypoints: 500`.
+
+| Metric | Best baseline (320 kp) | 500 kp | Change |
+|---|---|---|---|
+| ATE RMSE | **9.10 m** | 11.93 m | +31% |
+| ATE mean | **8.29 m** | 10.86 m | +31% |
+| ATE max | **17.13 m** | 22.83 m | +33% |
+| RPE mean (per 10 fr.) | **1.36 m** | 1.62 m | +19% |
+| RPE max (per 10 fr.) | **5.08 m** | 6.19 m | +22% |
+| % frames within 1.0 m | 5.6% | 3.9% | — |
+| Divergence frame | 96 / 1738 | **55 / 1738** | earlier |
+
+**Conclusion: worse.** Extra keypoints land on low-texture regions where uniform grid depth/flow is unreliable — adds noise rather than coverage. Reverted to `max_keypoints: 320`.
+
+---
+
 ## min_depth filter + more keypoints
 
 Uniform grid, `subpixel_keypoints: true`, `min_depth: 0.3`, `max_keypoints: 500`.
@@ -73,6 +91,7 @@ All files in `run_v1/` output directory:
 | `trajectory_eval_20260424_211847 (tomasi).txt` | Shi-Tomasi + subpixel | 10.74 m |
 | `trajectory_eval_20260424_214814.txt` | Shi-Tomasi duplicate | 10.74 m |
 | `trajectory_eval_20260425_145018.txt` | Uniform + subpixel, 500 kp, min_depth=0.3 — reverted | 13.44 m |
+| `trajectory_eval_20260425_152503.txt` | Uniform + subpixel, 500 kp, min_depth=0.0 — reverted | 11.93 m |
 
 ---
 
@@ -81,3 +100,4 @@ All files in `run_v1/` output directory:
 - Divergence consistently occurs around frame 96–106, corresponding to the first drastic camera swing
 - Best config to date: `subpixel_keypoints: true`, `keypoints_detector: uniform`, `max_keypoints: 320`, `min_depth: 0.0`
 - Raising `min_depth` to 0.3 m hurt badly (+48% ATE RMSE) — filters too many valid keypoints, SVD becomes under-constrained
+- Raising `max_keypoints` to 500 hurt (+31% ATE RMSE, divergence at frame 55 vs 96) — extra points land on low-texture regions with unreliable depth/flow
