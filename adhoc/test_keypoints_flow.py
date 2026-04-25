@@ -243,8 +243,9 @@ def main():
     if compose_movie:
         print("Composing movie.")
         flow_files = left_files[:len(left_files) - 1]
+        rel_out = os.path.relpath(cfg.output_path, cfg.dataset_path)
         transformations = [
-            lambda x: os.path.join("out_kp_flow", f"{int(x.split('_')[-1].split('.')[0]):06d}.png"),
+            lambda x: os.path.join(rel_out, "out_kp_flow", f"{int(x.split('_')[-1].split('.')[0]):06d}.png"),
         ]
         make_stacked_video(cfg.dataset_path, flow_files,
                            os.path.join(cfg.output_path, "keypoints_video.mp4"),

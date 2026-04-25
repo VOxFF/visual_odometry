@@ -42,7 +42,42 @@ Both with `subpixel_keypoints: true`.
 
 ---
 
+## min_depth filter + more keypoints
+
+Uniform grid, `subpixel_keypoints: true`, `min_depth: 0.3`, `max_keypoints: 500`.
+
+| Metric | Best baseline | min_depth=0.3, 500 kp | Change |
+|---|---|---|---|
+| ATE RMSE | **9.10 m** | 13.44 m | +48% |
+| ATE mean | **8.29 m** | 12.01 m | +45% |
+| ATE max | **17.13 m** | 23.38 m | +37% |
+| RPE mean (per 10 fr.) | **1.36 m** | 1.87 m | +38% |
+| RPE max (per 10 fr.) | **5.08 m** | 6.82 m | +34% |
+| % frames within 1.0 m | 5.6% | 5.4% | — |
+| Divergence frame | 96 / 1738 | 94 / 1738 | — |
+
+**Conclusion: worse.** `min_depth=0.3` filters too many valid keypoints, leaving SVD under-constrained. Extra keypoints (500) did not compensate. Reverted to `min_depth: 0.0`, `max_keypoints: 320`.
+
+---
+
+## History
+
+All files in `run_v1/` output directory:
+
+| File | Config | ATE RMSE |
+|---|---|---|
+| `trajectory_eval_20260422_215411.txt` | Baseline: integer sampling, uniform, 320 kp | 11.39 m |
+| `trajectory_eval_20260422_220303.txt` | Baseline duplicate | 11.39 m |
+| `trajectory_eval_20260424_204240 (subpixel).txt` | **Subpixel + uniform, 320 kp** — best so far | **9.10 m** |
+| `trajectory_eval_20260424_211716.txt` | Shi-Tomasi (unlabeled run) | 10.74 m |
+| `trajectory_eval_20260424_211847 (tomasi).txt` | Shi-Tomasi + subpixel | 10.74 m |
+| `trajectory_eval_20260424_214814.txt` | Shi-Tomasi duplicate | 10.74 m |
+| `trajectory_eval_20260425_145018.txt` | Uniform + subpixel, 500 kp, min_depth=0.3 — reverted | 13.44 m |
+
+---
+
 ## Notes
 - Pre-alignment drift (~7.2 m) is stable across all configs — accumulated error in the first ~815 frames before GT coverage begins, unaffected by keypoint strategy
 - Divergence consistently occurs around frame 96–106, corresponding to the first drastic camera swing
-- Best config to date: `subpixel_keypoints: true`, `keypoints_detector: uniform`
+- Best config to date: `subpixel_keypoints: true`, `keypoints_detector: uniform`, `max_keypoints: 320`, `min_depth: 0.0`
+- Raising `min_depth` to 0.3 m hurt badly (+48% ATE RMSE) — filters too many valid keypoints, SVD becomes under-constrained
