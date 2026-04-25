@@ -30,6 +30,7 @@ from modules.stereo.stereo_rectification import StereoRectification
 from modules.stereo.stereo_disparity_RAFT import DisparityRAFT
 from modules.flow.flow_map_RAFT import OpticalFlowRAFT
 from modules.keypoints.keypoints_uniform import UniformKeyPoints
+from modules.keypoints.keypoints_shi_tomasi import ShiTomasiKeyPoints
 from modules.keypoints.keypoints_3d import Keypoints3DXform
 from modules.keypoints.keypoints_3d_flow import Keypoints3DFlow
 from modules.pose.camera_svd_xform import CameraRansacXform
@@ -63,7 +64,10 @@ class CameraTrackingPipeline:
         # Keypoints
         stereo_mask, _, _, _ = self.rectification.get_rectification_masks()
         cam_params = self.params.get_camera_params(StereoParamsInterface.StereoCamera.LEFT)
-        self.pts_src   = UniformKeyPoints(stereo_mask)
+        if self.cfg.keypoints_detector == 'shi_tomasi':
+            self.pts_src = ShiTomasiKeyPoints(stereo_mask)
+        else:
+            self.pts_src = UniformKeyPoints(stereo_mask)
         self.pts_xform = Keypoints3DXform(cam_params, self.cfg.subpixel_keypoints)
         self.pts_flow  = Keypoints3DFlow(cam_params, self.pts_xform, stereo_mask, self.cfg.subpixel_keypoints)
 
