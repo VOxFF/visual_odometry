@@ -42,9 +42,6 @@ class StereoParamsYAML(StereoParamsInterface):
             if not input_data.lower().endswith((".yaml", ".yml")):
                 raise ValueError("Invalid file format. Expected a .yaml or .yml file.")
 
-            print(f"Loading YAML file: {input_data}")  # Debugging
-
-            # Check if the file exists before opening
             if not os.path.exists(input_data):
                 raise FileNotFoundError(f"YAML file not found: {input_data}")
 
@@ -54,16 +51,9 @@ class StereoParamsYAML(StereoParamsInterface):
                 except yaml.YAMLError as e:
                     raise ValueError(f"Error parsing YAML file: {e}")
 
-            # Pretty print the loaded YAML data
-            print("Parsed YAML Data:")
-            print(json.dumps(data, indent=4))  # Pretty print JSON-style output
-
         else:
-            print("Input is not a file, assuming raw YAML string.")  # Debugging
             try:
                 data = yaml.safe_load(input_data)
-                print("Parsed YAML String:")
-                print(json.dumps(data, indent=4))  # Pretty print JSON-style output
             except yaml.YAMLError as e:
                 raise ValueError(f"Error parsing YAML string: {e}")
 

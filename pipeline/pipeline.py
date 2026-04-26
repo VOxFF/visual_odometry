@@ -147,7 +147,11 @@ class CameraTrackingPipeline:
 
                 old_3D = kp3d[valid_mask]
                 new_3D = kp3d_2[valid_mask]
-                dz_mask = np.abs(new_3D[:, 2] - old_3D[:, 2]) <= self.cfg.dz_threshold
+                if self.cfg.log_dz_threshold:
+                    dz_allowed = self.cfg.dz_threshold * np.log1p(old_3D[:, 2])
+                else:
+                    dz_allowed = self.cfg.dz_threshold
+                dz_mask = np.abs(new_3D[:, 2] - old_3D[:, 2]) <= dz_allowed
                 old_3D, new_3D = old_3D[dz_mask], new_3D[dz_mask]
 
                 R_rel, t_rel = self.cam_estimator.compute_camera_xform(old_3D, new_3D)

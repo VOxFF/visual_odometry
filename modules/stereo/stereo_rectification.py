@@ -84,7 +84,7 @@ class StereoRectification(StereoRectificationInterface):
         """
         # Lazy computation using resolution from parameters
         if self.stereo_mask is None or self.roi_mask is None:
-            print("🔄 Rectification masks not found! Computing now...")
+            print("Computing rectification masks...")
             h, w = self.params.resolution[::-1]  # Ensure correct order (height, width)
             self._compute_masks(h, w)
 

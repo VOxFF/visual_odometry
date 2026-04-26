@@ -24,6 +24,7 @@ class Config:
     # Keypoints
     max_keypoints: int = 320
     dz_threshold: float = 1.0
+    log_dz_threshold: bool = False       # scale dz_threshold by log(1+z) per keypoint
     keypoints_detector: str = 'uniform'  # 'uniform' | 'shi_tomasi'
 
     # RAFT iterations
@@ -63,6 +64,7 @@ class Config:
             max_depth=params.get('max_depth', 15.0),
             max_keypoints=params.get('max_keypoints', 320),
             dz_threshold=params.get('dz_threshold', 1.0),
+            log_dz_threshold=params.get('log_dz_threshold', False),
             keypoints_detector=params.get('keypoints_detector', 'uniform'),
             raft_iters=params.get('raft_iters', 16),
             raft_disparity_warmstart=params.get('raft_disparity_warmstart', False),
