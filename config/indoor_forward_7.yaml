@@ -15,7 +15,7 @@ parameters:
   min_depth:      0.0
   max_depth:      15.0
   max_keypoints:        320
-  dz_threshold:         1.0
+  dz_threshold:         0.5
   keypoints_detector:   uniform   # uniform | shi_tomasi
   raft_iters:               16
   raft_disparity_warmstart: false
