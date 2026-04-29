@@ -60,20 +60,37 @@ Uniform grid, `subpixel_keypoints: true`, `min_depth: 0.0`, `max_keypoints: 500`
 
 ---
 
-## dz_threshold sweep + log-adaptive dz
+## dz_threshold sweep — non-deterministic CUDA (Apr 25, unreliable)
 
-Parameter sweep: `dz_threshold` × [0.5, 1.0, 2.0], `log_dz_threshold` × [False, True], `max_keypoints=320`, `subpixel=true`, `uniform`.
+`max_keypoints=320`, `subpixel=true`, `uniform`. CUDA non-deterministic (no `cudnn.deterministic`).
+
+| Label | dz_threshold | log_dz | ATE RMSE | Div frame |
+|---|---|---|---|---|
+| dz=0.5, log=F | 0.5 | no | 8.13 m | 132 |
+| dz=1.0, log=T | 1.0 | yes | 10.06 m | 100 |
+| dz=2.0, log=T | 2.0 | yes | 10.22 m | 105 |
+| dz=0.5, log=T | 0.5 | yes | 11.21 m | 75 |
+| dz=1.0, log=F | 1.0 | no | 11.84 m | 107 |
+| dz=2.0, log=F | 2.0 | no | 13.88 m | 94 |
+
+**These results are misleading** — CUDA non-determinism swamped the config signal. dz=0.5 ran first (fresh GPU, lucky) and dz=1.0 ran fifth (unfavorable GPU state). Do not use for conclusions.
+
+---
+
+## dz_threshold sweep — deterministic CUDA (Apr 27, reliable)
+
+Same grid. Added `torch.backends.cudnn.deterministic=True` + `benchmark=False` to both RAFT solvers.
 
 | Label | dz_threshold | log_dz | ATE RMSE | ATE mean | RPE mean | Div frame |
 |---|---|---|---|---|---|---|
-| **dz=0.5, log=F** | 0.5 | no | **8.13 m** | **7.18 m** | **1.35 m** | **132** |
-| dz=1.0, log=T | 1.0 | yes | 10.06 m | 8.98 m | 1.54 m | 100 |
-| dz=2.0, log=T | 2.0 | yes | 10.22 m | 9.15 m | 1.62 m | 105 |
-| dz=0.5, log=T | 0.5 | yes | 11.21 m | 9.92 m | 1.80 m | 75 |
-| dz=1.0, log=F *(prev best)* | 1.0 | no | 11.84 m | 10.53 m | 1.72 m | 107 |
-| dz=2.0, log=F | 2.0 | no | 13.88 m | 12.32 m | 1.89 m | 94 |
+| **dz=1.0, log=F** | 1.0 | no | **8.62 m** | **7.68 m** | **1.31 m** | 101 |
+| dz=2.0, log=F | 2.0 | no | 8.96 m | 7.97 m | 1.41 m | 105 |
+| dz=2.0, log=T | 2.0 | yes | 9.68 m | 8.61 m | 1.41 m | **121** |
+| dz=1.0, log=T | 1.0 | yes | 11.69 m | 10.28 m | 1.79 m | 84 |
+| dz=0.5, log=F | 0.5 | no | 11.98 m | 10.64 m | 1.70 m | 109 |
+| dz=0.5, log=T | 0.5 | yes | 13.49 m | 12.05 m | 2.08 m | 80 |
 
-**Conclusion: `dz_threshold=0.5` fixed is the winner.** -11% ATE RMSE vs previous best (8.13m vs 9.10m), divergence pushed to frame 132. Tighter filter removes more bad keypoints. Log-adaptive threshold hurt — it makes the threshold looser at range, wrong direction for this dataset where most points are on walls at ~5m.
+**Conclusion: `dz_threshold=1.0, log=False` is the actual best.** Tighter filter (0.5) hurts — removes too many valid keypoints. Looser (2.0) is close. `log_dz` consistently hurts. Deterministic mode itself improved results vs prior standalone runs (8.62m vs 9.10m).
 
 ---
 
@@ -110,14 +127,16 @@ All files in `run_v1/` output directory:
 | `trajectory_eval_20260425_145018.txt` | Uniform + subpixel, 500 kp, min_depth=0.3 — reverted | 13.44 m |
 | `trajectory_eval_20260425_152503.txt` | Uniform + subpixel, 500 kp, min_depth=0.0 — reverted | 11.93 m |
 | `trajectory_eval_20260425_154941.txt` | Uniform + subpixel, 320 kp — repeat run (GPU non-determinism) | 9.45 m |
+| sweep `20260427_234144.csv` | dz sweep with deterministic CUDA — best: dz=1.0 log=F | **8.62 m** |
 
 ---
 
 ## Notes
 - Pre-alignment drift (~7.2 m) is stable across all configs — accumulated error in the first ~815 frames before GT coverage begins, unaffected by keypoint strategy
 - Divergence consistently occurs around frame 96–106, corresponding to the first drastic camera swing
-- Best config to date: `subpixel_keypoints: true`, `keypoints_detector: uniform`, `max_keypoints: 320`, `min_depth: 0.0`, `dz_threshold: 0.5`
-- Raising `min_depth` to 0.3 m hurt badly (+48% ATE RMSE) — filters too many valid keypoints, SVD becomes under-constrained
-- Raising `max_keypoints` to 500 hurt (+31% ATE RMSE, divergence at frame 55 vs 96) — extra points land on low-texture regions with unreliable depth/flow
-- Run-to-run variance ~4% ATE RMSE due to GPU non-determinism in RAFT — only trust differences larger than this
-- `dz_threshold=0.5` beats 1.0 by 11% — tighter filter removes bad keypoints; log-adaptive dz made things worse (looser at range = more noise)
+- Best config to date: `subpixel_keypoints: true`, `keypoints_detector: uniform`, `max_keypoints: 320`, `min_depth: 0.0`, `dz_threshold: 1.0`, `log_dz_threshold: false` → **ATE RMSE 8.62 m**
+- CUDA non-determinism was masking real config signal — added `cudnn.deterministic=True` to both RAFT solvers; results now reproducible
+- `dz_threshold=0.5` appeared best in non-deterministic sweep but is actually 5th worst — was a lucky first-run artifact
+- Raising `min_depth` to 0.3 m hurt badly (+48%) — filters too many valid keypoints
+- Raising `max_keypoints` to 500 hurt (+31%, divergence at frame 55) — extra points land on low-texture regions
+- `log_dz_threshold` consistently hurts across all dz values

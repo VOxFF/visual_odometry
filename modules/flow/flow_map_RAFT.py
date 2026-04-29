@@ -28,6 +28,8 @@ class OpticalFlowRAFT(OpticalFlowInterface):
             iters (int): Number of iterations for the RAFT algorithm.
         """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
         self.iters = iters
         self.warmstart = warmstart
         self.flow = None

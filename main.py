@@ -1,6 +1,6 @@
 import argparse
 from config.config import Config
-from pipeline.pipeline import CameraTrackingPipeline
+from pipeline.flow_pipeline import FlowPipeline
 
 
 def main():
@@ -9,7 +9,7 @@ def main():
     args = parser.parse_args()
 
     config = Config.from_yaml(args.config)
-    pipeline = CameraTrackingPipeline(config)
+    pipeline = FlowPipeline(config)
     pipeline.run()
 
 
