@@ -102,7 +102,7 @@ class LandmarkMap:
             lm_ids     : (M,)   landmark ids (for subsequent merge calls)
             kp_indices : (M,)   which query keypoint each match came from
         """
-        if self.size < 2 or len(descriptors) == 0:
+        if len(self._desc_list) < 2 or len(descriptors) == 0:
             empty = np.empty((0,), dtype=int)
             return np.empty((0, 3)), np.empty((0, 2)), empty, empty
 
