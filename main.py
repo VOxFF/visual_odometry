@@ -1,6 +1,5 @@
 import argparse
 from config.config import Config
-from pipeline.flow_pipeline import FlowPipeline
 
 
 def main():
@@ -9,7 +8,14 @@ def main():
     args = parser.parse_args()
 
     config = Config.from_yaml(args.config)
-    pipeline = FlowPipeline(config)
+
+    if config.pipeline == 'landmark':
+        from pipeline.landmark_pipeline import LandmarkPipeline
+        pipeline = LandmarkPipeline(config)
+    else:
+        from pipeline.flow_pipeline import FlowPipeline
+        pipeline = FlowPipeline(config)
+
     pipeline.run()
 
 
