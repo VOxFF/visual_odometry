@@ -6,6 +6,7 @@ paths:
   flow_checkpoint:    models/rart-flow/raft-things.pth
 
 run:
+  pipeline:           landmark
   compute_trajectory: true
   render_images:      true
   compose_movie:      true
