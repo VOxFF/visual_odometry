@@ -40,14 +40,34 @@ def backproject(u: np.ndarray, v: np.ndarray, z: np.ndarray,
     return np.stack([X, Y, z], axis=1)
 
 
+# FLANN k-d tree parameters for float32 L2 descriptors (SIFT).
+# trees=5: number of parallel k-d trees — more trees = higher accuracy, slower build.
+# checks=50: nodes visited per query — higher = more accurate, slower search.
+_FLANN_INDEX_KDTREE = 1
+_FLANN_INDEX_PARAMS  = dict(algorithm=_FLANN_INDEX_KDTREE, trees=5)
+_FLANN_SEARCH_PARAMS = dict(checks=50)
+
+
 class LandmarkMap:
     """
     Sparse 3D landmark map with SIFT descriptor matching.
 
     Each landmark stores its world-frame position, uncertainty covariance,
-    and all SIFT descriptors from every observation.
+    and all SIFT descriptors from every observation (for future aging/voting).
 
-    Operations:
+    Matching index design
+    ---------------------
+    The index keeps exactly ONE descriptor per landmark — the latest merged
+    descriptor. This bounds index size to map.size regardless of how many times
+    each landmark has been observed, avoiding the BFMatcher ~262K row hard limit
+    that would be hit after ~860 frames at 320 keypoints/frame.
+
+    FLANN (FlannBasedMatcher) is used instead of BFMatcher. BFMatcher is O(N×M)
+    exact search; FLANN builds a k-d tree for O(M × log N) approximate search —
+    10-50× faster at large N with negligible accuracy loss for SIFT.
+
+    Operations
+    ----------
         get_correspondences  — match new-frame descriptors → 3D-2D pairs for PnP
         merge                — update existing landmark with new observation
         add                  — insert new landmark
@@ -58,24 +78,34 @@ class LandmarkMap:
                  max_merge_dist_3d: float = 0.5):
         """
         Args:
-            match_ratio:       Lowe ratio-test threshold (lower = stricter matching).
-            max_merge_dist_3d: Max Euclidean distance (m) between new observation
-                               and existing landmark to allow merge.
+            match_ratio:       Lowe ratio-test threshold. A match passes only if
+                               best_dist < match_ratio * second_best_dist.
+                               Lower = stricter (fewer but more reliable matches).
+            max_merge_dist_3d: Maximum Euclidean distance (metres) between a new
+                               3D observation and an existing landmark for the merge
+                               to be accepted. Guards against descriptor collisions
+                               between geometrically distant points.
         """
-        self.match_ratio      = match_ratio
+        self.match_ratio       = match_ratio
         self.max_merge_dist_3d = max_merge_dist_3d
 
         self.landmarks: dict[int, Landmark] = {}
         self._next_id = 0
 
-        # Flat descriptor index — grows as landmarks are added / merged
-        self._desc_list: list[np.ndarray] = []   # (128,) float32 per entry
-        self._lm_id_list: list[int]       = []   # landmark id parallel to _desc_list
-
-        self._desc_matrix: Optional[np.ndarray] = None   # cached (N, 128)
+        # --- Matching index ---
+        # _lm_to_desc: lm_id → latest descriptor (one entry per landmark).
+        #   Updated on every merge so the index always reflects the most recent
+        #   appearance of each landmark.
+        # _lm_index_ids: ordered list of lm_ids matching rows of _desc_matrix.
+        #   Rebuilt lazily together with _desc_matrix when _dirty=True.
+        # _desc_matrix: (N, 128) float32 array passed to FLANN knnMatch.
+        self._lm_to_desc: dict[int, np.ndarray] = {}
+        self._lm_index_ids: list[int] = []
+        self._desc_matrix: Optional[np.ndarray] = None
         self._dirty = False
 
-        self._matcher = cv2.BFMatcher(cv2.NORM_L2)
+        # FLANN approximate nearest-neighbour matcher for float32 L2 descriptors.
+        self._matcher = cv2.FlannBasedMatcher(_FLANN_INDEX_PARAMS, _FLANN_SEARCH_PARAMS)
 
     # ------------------------------------------------------------------
     # Public API
@@ -92,6 +122,9 @@ class LandmarkMap:
         """
         Match new-frame descriptors against the landmark map.
 
+        Uses Lowe's ratio test to filter ambiguous matches, then deduplicates
+        so each landmark appears at most once (keeps the closest query match).
+
         Args:
             keypoints_2d: (N, 2) pixel coordinates in the new frame.
             descriptors:  (N, 128) SIFT descriptors.
@@ -102,25 +135,30 @@ class LandmarkMap:
             lm_ids     : (M,)   landmark ids (for subsequent merge calls)
             kp_indices : (M,)   which query keypoint each match came from
         """
-        if len(self._desc_list) < 2 or len(descriptors) == 0:
+        if self.size < 2 or len(descriptors) == 0:
+            # Need ≥ 2 landmarks for knnMatch k=2 ratio test
             empty = np.empty((0,), dtype=int)
             return np.empty((0, 3)), np.empty((0, 2)), empty, empty
 
-        train = self._get_matrix()
+        train, index_ids = self._get_matrix()
         matches = self._matcher.knnMatch(descriptors.astype(np.float32), train, k=2)
 
         pts_3d, pts_2d, lm_ids, kp_indices = [], [], [], []
-        seen_lm: dict[int, float] = {}   # deduplicate: keep best match per landmark
+        seen_lm: dict[int, float] = {}   # lm_id → best distance so far (dedup)
 
         for i, pair in enumerate(matches):
             if len(pair) < 2:
                 continue
             m, n = pair
+
+            # Lowe ratio test: accept only unambiguous matches
             if m.distance >= self.match_ratio * n.distance:
                 continue
 
-            lm_id = self._lm_id_list[m.trainIdx]
-            # Keep only the closest query match per landmark
+            lm_id = index_ids[m.trainIdx]
+
+            # Deduplicate: if two query keypoints match the same landmark,
+            # keep only the one with the smaller descriptor distance
             if lm_id in seen_lm and seen_lm[lm_id] <= m.distance:
                 continue
             seen_lm[lm_id] = m.distance
@@ -148,16 +186,24 @@ class LandmarkMap:
         """
         Update an existing landmark with a new observation.
 
-        Position is refined via information-filter fusion:
+        Position is refined via information-filter (Kalman-style) fusion:
             Σ_new⁻¹  = Σ_old⁻¹ + Σ_obs⁻¹
             xyz_new  = Σ_new × (Σ_old⁻¹ × xyz_old + Σ_obs⁻¹ × xyz_obs)
+        Each re-observation tightens the position estimate, weighted by certainty.
 
-        Returns True if merged, False if 3D consistency check failed.
+        The matching index entry for this landmark is updated to the latest
+        descriptor so subsequent matches use the most recent appearance.
+
+        Returns True if merged, False if the 3D consistency check failed
+        (observation too far from existing landmark position).
         """
         lm = self.landmarks.get(lm_id)
         if lm is None:
             return False
 
+        # 3D consistency guard: reject if new observation is geometrically far
+        # from the stored position. Catches descriptor collisions (two different
+        # physical points with similar SIFT descriptors).
         dist = float(np.linalg.norm(xyz_world - lm.xyz_world))
         if dist > self.max_merge_dist_3d:
             return False
@@ -169,17 +215,19 @@ class LandmarkMap:
             S_new     = np.linalg.inv(S_old_inv + S_obs_inv)
             xyz_new   = S_new @ (S_old_inv @ lm.xyz_world + S_obs_inv @ xyz_world)
         except np.linalg.LinAlgError:
-            xyz_new = (lm.xyz_world + xyz_world) / 2.0   # fallback: average
+            # Singular covariance (degenerate case) — fall back to simple average
+            xyz_new = (lm.xyz_world + xyz_world) / 2.0
             S_new   = lm.covariance
 
         lm.xyz_world  = xyz_new
         lm.covariance = S_new
-        lm.descriptors.append(descriptor)
+        lm.descriptors.append(descriptor)   # keep full history for future aging
         lm.observations += 1
         lm.last_seen_frame = frame_idx
 
-        self._desc_list.append(descriptor)
-        self._lm_id_list.append(lm_id)
+        # Update matching index to latest descriptor (replaces old entry in-place,
+        # index size stays constant at map.size)
+        self._lm_to_desc[lm_id] = descriptor
         self._dirty = True
         return True
 
@@ -202,8 +250,9 @@ class LandmarkMap:
             observations=1,
             last_seen_frame=frame_idx,
         )
-        self._desc_list.append(descriptor)
-        self._lm_id_list.append(lm_id)
+        # Register in matching index
+        self._lm_to_desc[lm_id] = descriptor
+        self._lm_index_ids.append(lm_id)
         self._dirty = True
         return lm_id
 
@@ -211,8 +260,18 @@ class LandmarkMap:
     # Internal
     # ------------------------------------------------------------------
 
-    def _get_matrix(self) -> np.ndarray:
+    def _get_matrix(self) -> Tuple[np.ndarray, list]:
+        """
+        Return (desc_matrix, lm_index_ids), rebuilding lazily if dirty.
+
+        desc_matrix   : (N, 128) float32 — one row per landmark (latest descriptor)
+        lm_index_ids  : list of lm_ids, parallel to desc_matrix rows
+        """
         if self._dirty or self._desc_matrix is None:
-            self._desc_matrix = np.array(self._desc_list, dtype=np.float32)
+            self._lm_index_ids = list(self._lm_to_desc.keys())
+            self._desc_matrix  = np.array(
+                [self._lm_to_desc[i] for i in self._lm_index_ids],
+                dtype=np.float32
+            )
             self._dirty = False
-        return self._desc_matrix
+        return self._desc_matrix, self._lm_index_ids

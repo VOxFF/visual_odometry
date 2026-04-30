@@ -1,9 +1,14 @@
+import time
+
+import os
+
 import cv2
 import numpy as np
 
 from config.config import Config
 from pipeline.base_pipeline import PipelineBase
 from modules.landmarks.landmark_map import LandmarkMap, compute_covariance, backproject
+from modules.landmarks.h5_export import LandmarkH5Exporter
 
 
 class LandmarkPipeline(PipelineBase):
@@ -22,11 +27,9 @@ class LandmarkPipeline(PipelineBase):
     def __init__(self, config: Config):
         super().__init__(config)
 
-        self.sift = cv2.SIFT_create(nfeatures=self.cfg.max_keypoints)
-        self.map  = LandmarkMap(
-            match_ratio=0.75,
-            max_merge_dist_3d=0.5,
-        )
+        self.sift     = cv2.SIFT_create(nfeatures=self.cfg.max_keypoints)
+        self.map      = LandmarkMap(match_ratio=0.75, max_merge_dist_3d=0.5)
+        self.exporter = LandmarkH5Exporter()
 
         K = self.cam_params.get_intrinsics()
         self.fx = float(K[0, 0])
@@ -46,20 +49,31 @@ class LandmarkPipeline(PipelineBase):
         t_prev = np.zeros(3)
         first_frame = True
 
+        # Per-step timing accumulators (reset every 20 frames)
+        t_load = t_disp = t_sift = t_match = t_pnp = t_merge = 0.0
+        _tick = time.perf_counter
+
         with open(self.traj_txt_path, "w") as traj_file:
             traj_file.write("frame, translation, rotation_matrix_flat\n")
 
             for i, left_rel in enumerate(self.left_files):
+                t0 = _tick()
                 img_left, img_right = self._load_stereo(left_rel)
                 if img_left is None or img_right is None:
                     continue
+                t_load += _tick() - t0
 
                 # ── Depth ──────────────────────────────────────────────
+                t0 = _tick()
                 disp  = self.disparity_solver.compute_disparity(img_left, img_right)
                 depth = self.depth_solver.compute_depth(disp)
+                t_disp += _tick() - t0
 
                 # ── SIFT keypoints ──────────────────────────────────────
+                t0 = _tick()
                 kps, descs = self.sift.detectAndCompute(img_left, None)
+                t_sift += _tick() - t0
+
                 if descs is None or len(kps) == 0:
                     traj_file.write(f"{i}, {[0.,0.,0.]}, {np.eye(3).flatten().tolist()}\n")
                     continue
@@ -74,27 +88,33 @@ class LandmarkPipeline(PipelineBase):
 
                 # ── First frame: initialise map, write identity ─────────
                 if first_frame:
-                    self._add_new_landmarks(kp_uv, descs, z_vals, valid,
-                                            R_prev, t_prev, frame_idx=i)
+                    new_xyzs = self._add_new_landmarks(kp_uv, descs, z_vals, valid,
+                                                       R_prev, t_prev, frame_idx=i)
+                    self.exporter.record_new(i, new_xyzs)
                     first_frame = False
                     traj_file.write(f"{i}, {[0.,0.,0.]}, {np.eye(3).flatten().tolist()}\n")
                     continue
 
                 # ── Match against map → PnP ─────────────────────────────
+                t0 = _tick()
                 pts_3d, pts_2d, lm_ids, kp_indices = self.map.get_correspondences(kp_uv, descs)
+                t_match += _tick() - t0
 
+                t0 = _tick()
                 R_curr, t_curr, inlier_mask = self._solve_pnp(pts_3d, pts_2d)
+                t_pnp += _tick() - t0
 
                 if R_curr is None:
                     # PnP failed — write identity relative transform, keep prev pose
                     traj_file.write(f"{i}, {[0.,0.,0.]}, {np.eye(3).flatten().tolist()}\n")
-                    # Still update map with new landmarks at prev pose
-                    self._add_new_landmarks(kp_uv, descs, z_vals, valid,
-                                            R_prev, t_prev, frame_idx=i,
-                                            matched_kp_indices=set())
+                    new_xyzs = self._add_new_landmarks(kp_uv, descs, z_vals, valid,
+                                                       R_prev, t_prev, frame_idx=i,
+                                                       matched_kp_indices=set())
+                    self.exporter.record_new(i, new_xyzs)
                     continue
 
                 # ── Merge inlier landmarks ──────────────────────────────
+                t0 = _tick()
                 inliers = set()
                 if inlier_mask is not None:
                     for j, lm_id in enumerate(lm_ids):
@@ -109,9 +129,11 @@ class LandmarkPipeline(PipelineBase):
 
                 # ── Add unmatched keypoints as new landmarks ────────────
                 matched_kp = set(int(k) for k in kp_indices)
-                self._add_new_landmarks(kp_uv, descs, z_vals, valid,
-                                        R_curr, t_curr, frame_idx=i,
-                                        matched_kp_indices=matched_kp)
+                new_xyzs = self._add_new_landmarks(kp_uv, descs, z_vals, valid,
+                                                   R_curr, t_curr, frame_idx=i,
+                                                   matched_kp_indices=matched_kp)
+                self.exporter.record_new(i, new_xyzs)
+                t_merge += _tick() - t0
 
                 # ── Relative transform (for trajectory file) ───────────
                 R_rel = R_curr @ R_prev.T
@@ -120,12 +142,24 @@ class LandmarkPipeline(PipelineBase):
 
                 R_prev, t_prev = R_curr.copy(), t_curr.copy()
 
-                if i % 20 == 0:
-                    print(f"Processed {i} / {len(self.left_files)}  "
-                          f"| map size: {self.map.size}  "
-                          f"| correspondences: {len(pts_3d)}", flush=True)
+                if i % 20 == 0 and i > 0:
+                    print(
+                        f"[{i:4d}/{len(self.left_files)}]"
+                        f"  map:{self.map.size:6d}  corr:{len(pts_3d):4d}"
+                        f"  load:{t_load*1e3/20:5.1f}ms"
+                        f"  disp:{t_disp*1e3/20:5.1f}ms"
+                        f"  sift:{t_sift*1e3/20:5.1f}ms"
+                        f"  match:{t_match*1e3/20:5.1f}ms"
+                        f"  pnp:{t_pnp*1e3/20:5.1f}ms"
+                        f"  merge:{t_merge*1e3/20:5.1f}ms",
+                        flush=True
+                    )
+                    t_load = t_disp = t_sift = t_match = t_pnp = t_merge = 0.0
 
         print("Trajectory computation complete. Data written to:", self.traj_txt_path)
+
+        h5_path = os.path.join(self.cfg.output_path, "landmarks.h5")
+        self.exporter.write(h5_path)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -181,10 +215,11 @@ class LandmarkPipeline(PipelineBase):
     def _add_new_landmarks(self, kp_uv, descs, z_vals, valid_mask,
                            R_world_to_cam, t_world_to_cam,
                            frame_idx, matched_kp_indices=None):
-        """Add valid unmatched keypoints as new landmarks."""
+        """Add valid unmatched keypoints as new landmarks. Returns new world positions."""
         if matched_kp_indices is None:
             matched_kp_indices = set()
 
+        new_xyzs = []
         for idx in range(len(kp_uv)):
             if idx in matched_kp_indices:
                 continue
@@ -195,3 +230,5 @@ class LandmarkPipeline(PipelineBase):
             )
             if xyz_world is not None:
                 self.map.add(xyz_world, cov, descs[idx], frame_idx)
+                new_xyzs.append(xyz_world)
+        return new_xyzs

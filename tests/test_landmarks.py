@@ -269,12 +269,12 @@ class TestGetCorrespondences:
         assert lm_ids.shape   == (M,)
         assert kp_idx.shape   == (M,)
 
-    def test_single_descriptor_in_map_returns_empty(self, empty_map):
-        """knnMatch needs k=2 training samples — 1 descriptor → empty result."""
+    def test_single_landmark_in_map_returns_empty(self, empty_map):
+        """knnMatch needs k=2 training samples — 1 landmark → empty result."""
         cov  = compute_covariance(3.0, FX, FY, BASELINE, np.eye(3))
         desc = make_desc(0)
         empty_map.add(np.array([1., 2., 3.]), cov, desc, frame_idx=0)
-        assert len(empty_map._desc_list) == 1
+        assert empty_map.size == 1
         kp = np.array([[100., 200.]])
         pts_3d, _, _, _ = empty_map.get_correspondences(kp, desc.reshape(1, -1))
         assert len(pts_3d) == 0
@@ -311,26 +311,34 @@ class TestGetCorrespondences:
 
 class TestFlatIndexIntegrity:
 
-    def test_lm_ids_after_multiple_merges(self, empty_map):
-        """All descriptor entries for a merged landmark must map to the same lm_id."""
+    def test_index_has_one_entry_per_landmark_after_merges(self, empty_map):
+        """Merging must NOT grow the index — one descriptor per landmark always."""
         cov   = compute_covariance(3.0, FX, FY, BASELINE, np.eye(3))
         xyz   = np.array([1., 2., 3.])
-        # Add two landmarks so knnMatch has ≥ 2 training samples
         lm_id = empty_map.add(xyz, cov, make_desc(0), frame_idx=0)
         empty_map.add(xyz + 5, cov, make_desc(1), frame_idx=0)
-        # Merge landmark 0 three more times
+        # Merge landmark 0 three times — index must stay at size=2
         for k in range(2, 5):
             empty_map.merge(lm_id, xyz, cov, make_desc(k), frame_idx=k)
-        # All entries in the flat index that point to lm_id should be consistent
-        ids_in_index = [lid for lid in empty_map._lm_id_list if lid == lm_id]
-        assert len(ids_in_index) == 4   # 1 original + 3 merges
+        assert len(empty_map._lm_to_desc) == 2   # still 2 landmarks in index
 
-    def test_desc_list_and_lm_id_list_same_length(self, empty_map):
+    def test_index_size_equals_map_size(self, empty_map):
+        """_lm_to_desc must have exactly one entry per landmark."""
         cov = compute_covariance(3.0, FX, FY, BASELINE, np.eye(3))
         for i in range(5):
             empty_map.add(np.array([float(i), 0., 3.]), cov, make_desc(i), frame_idx=0)
         empty_map.merge(0, np.array([0., 0., 3.]), cov, make_desc(99), frame_idx=1)
-        assert len(empty_map._desc_list) == len(empty_map._lm_id_list)
+        assert len(empty_map._lm_to_desc) == empty_map.size
+
+    def test_index_updated_to_latest_descriptor_after_merge(self, empty_map):
+        """After merge the index entry for that landmark must be the new descriptor."""
+        cov     = compute_covariance(3.0, FX, FY, BASELINE, np.eye(3))
+        xyz     = np.array([1., 2., 3.])
+        orig    = make_desc(0)
+        latest  = make_desc(99)
+        lm_id   = empty_map.add(xyz, cov, orig, frame_idx=0)
+        empty_map.merge(lm_id, xyz, cov, latest, frame_idx=1)
+        assert np.allclose(empty_map._lm_to_desc[lm_id], latest)
 
 
 # ── Merge metadata ────────────────────────────────────────────────────────────

@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""
+pointsview — visualise a landmark HDF5 file in usdview.
+
+Reads the .h5 file produced by LandmarkH5Exporter, converts it to a
+time-sampled USDA (temp file), then launches usdview.  Scrub the timeline
+to watch the point cloud accumulate frame by frame.
+
+Usage
+-----
+    pointsview landmarks.h5
+    pointsview landmarks.h5 --fps 60
+    pointsview landmarks.h5 --width 0.05
+"""
+
+import argparse
+import os
+import subprocess
+import sys
+import tempfile
+
+import h5py
+import numpy as np
+from pxr import Gf, Usd, UsdGeom, Vt
+
+USDVIEW = os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), 'usd_install', 'bin', 'usdview')
+if not os.path.exists(USDVIEW):
+    USDVIEW = 'usdview'   # fall back to PATH
+
+
+def h5_to_usda(h5_path: str, usda_path: str, fps_override: float | None,
+               point_width: float) -> int:
+    """Convert landmark HDF5 → USDA. Returns total landmark count."""
+    with h5py.File(h5_path, 'r') as f:
+        fps       = float(fps_override or f.attrs.get('fps', 30.0))
+        frames_grp = f['frames']
+        keys      = sorted(frames_grp.keys())
+
+        if not keys:
+            print("ERROR: no frames in HDF5 file.", file=sys.stderr)
+            sys.exit(1)
+
+        max_frame = int(keys[-1])
+
+        stage = Usd.Stage.CreateNew(usda_path)
+        UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.y)
+        stage.SetStartTimeCode(0)
+        stage.SetEndTimeCode(float(max_frame))
+        stage.SetTimeCodesPerSecond(fps)
+
+        UsdGeom.Xform.Define(stage, '/World')
+        UsdGeom.Xform.Define(stage, '/World/Landmarks')
+
+        total = 0
+        for key in keys:
+            frame_idx = int(key)
+            xyzs      = frames_grp[key][:]          # (N, 3) float32
+
+            prim_path = f'/World/Landmarks/F{frame_idx:06d}'
+            pts_prim  = UsdGeom.Points.Define(stage, prim_path)
+
+            pts_prim.GetPointsAttr().Set(
+                Vt.Vec3fArray([Gf.Vec3f(*p.tolist()) for p in xyzs])
+            )
+            pts_prim.GetWidthsAttr().Set(
+                Vt.FloatArray([point_width] * len(xyzs))
+            )
+
+            # Color: blue (early frames) → red (late frames)
+            t     = frame_idx / max(max_frame, 1)
+            color = Gf.Vec3f(float(t), float(0.3 * (1.0 - t)), float(1.0 - t))
+            cpv   = pts_prim.GetDisplayColorPrimvar()
+            cpv.Set(Vt.Vec3fArray([color]))
+            cpv.SetInterpolation(UsdGeom.Tokens.constant)
+
+            # Invisible before birth, visible from birth frame onwards
+            img = UsdGeom.Imageable(pts_prim)
+            img.MakeInvisible(0)
+            img.MakeVisible(frame_idx)
+
+            total += len(xyzs)
+
+        stage.GetRootLayer().Save()
+        return total
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Visualise landmark HDF5 accumulation in usdview.')
+    parser.add_argument('h5_file',          help='landmarks.h5 produced by the pipeline')
+    parser.add_argument('--fps',   type=float, default=None,
+                        help='Playback FPS (overrides value stored in HDF5)')
+    parser.add_argument('--width', type=float, default=0.02,
+                        help='Point display width in world units (default: 0.02)')
+    args = parser.parse_args()
+
+    if not os.path.exists(args.h5_file):
+        print(f"ERROR: file not found: {args.h5_file}", file=sys.stderr)
+        sys.exit(1)
+
+    fd, tmp_path = tempfile.mkstemp(suffix='.usda', prefix='pointsview_')
+    os.close(fd)
+
+    try:
+        print(f"Converting {args.h5_file} …")
+        total = h5_to_usda(args.h5_file, tmp_path, args.fps, args.width)
+        print(f"  {total:,} landmarks → {tmp_path}")
+        print(f"Launching usdview …")
+        subprocess.run([USDVIEW, tmp_path], check=True)
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+if __name__ == '__main__':
+    main()
