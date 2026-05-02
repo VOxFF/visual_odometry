@@ -1,6 +1,7 @@
 import os
 import sys
 import re
+from datetime import datetime
 import ast
 import itertools
 import cv2
@@ -59,7 +60,8 @@ class PipelineBase(ABC):
 
         # Output paths
         os.makedirs(self.cfg.output_path, exist_ok=True)
-        self.traj_txt_path  = os.path.join(self.cfg.output_path, "camera_trajectory.txt")
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.traj_txt_path  = os.path.join(self.cfg.output_path, f"camera_trajectory_{ts}.txt")
         self.truth_txt_path = os.path.join(self.cfg.dataset_path, "groundtruth.txt")
         self.traj_img_dir   = os.path.join(self.cfg.output_path, "out_traj")
         os.makedirs(self.traj_img_dir, exist_ok=True)
@@ -68,7 +70,9 @@ class PipelineBase(ABC):
         self.left_txt = os.path.join(self.cfg.dataset_path, "left_images.txt")
         df_left = pd.read_csv(self.left_txt, delim_whitespace=True, comment="#",
                               names=["id", "timestamp", "image_name"])
-        self.left_files = df_left["image_name"].tolist()
+        all_files = df_left["image_name"].tolist()
+        self.frame_start = self.cfg.start_frame
+        self.left_files  = all_files[self.frame_start:]
         if self.cfg.limit:
             self.left_files = self.left_files[:self.cfg.limit]
 
@@ -125,7 +129,8 @@ class PipelineBase(ABC):
                 global_positions.append(world_pos)
                 global_Ts.append(T_world)
 
-        combined     = match_ground_truth_positions(global_positions, self.left_txt, self.truth_txt_path)
+        combined     = match_ground_truth_positions(global_positions, self.left_txt, self.truth_txt_path,
+                                                    start_index=self.frame_start)
         valid_indices = [i for i, (_, gt) in enumerate(combined) if gt is not None]
         valid_pairs   = [combined[i] for i in valid_indices]
         valid_Ts      = [global_Ts[i] for i in valid_indices]
@@ -161,13 +166,17 @@ class PipelineBase(ABC):
 
     def compose_movie(self, valid_indices: list):
         print("Composing movie...")
+        if not valid_indices:
+            print("No valid frames to compose — skipping movie.")
+            return
         valid_image_files = [self.left_files[i] for i in valid_indices]
         img_to_traj_idx   = {f: idx for idx, f in enumerate(valid_image_files)}
         transformations = [
             lambda x: x,
             lambda x: os.path.join(self.traj_img_dir, f"traj_{img_to_traj_idx[x]:06d}.png"),
         ]
-        out_path = os.path.join(self.cfg.output_path, "cam_tracking_video.mp4")
+        ts       = os.path.splitext(os.path.basename(self.traj_txt_path))[0].split("_", 2)[2]
+        out_path = os.path.join(self.cfg.output_path, f"cam_tracking_video_{ts}.mp4")
         make_stacked_video(self.cfg.dataset_path, valid_image_files, out_path, transformations)
         print(f"Movie composed as {out_path}")
 

@@ -259,6 +259,22 @@ class TestGetCorrespondences:
         # landmark 0 should appear at most once
         assert list(lm_ids).count(0) <= 1
 
+    def test_deduplication_uses_better_match_2d(self, empty_map):
+        """When two keypoints match the same landmark, the closer match's 2D coords win."""
+        descs, _ = self._populate(empty_map, n=5)
+        # First query: slightly perturbed descriptor (worse match)
+        # Second query: exact copy (better match)
+        worse  = descs[0].copy()
+        worse[0] += 30.0          # push it away from descriptor 0
+        better = descs[0].copy()  # exact match
+        kp = np.array([[11., 22.], [33., 44.]])
+        d  = np.vstack([worse, better])
+        _, pts_2d, lm_ids, kp_idx = empty_map.get_correspondences(kp, d)
+        matches_lm0 = [(pts_2d[j], kp_idx[j]) for j, lid in enumerate(lm_ids) if lid == 0]
+        assert len(matches_lm0) == 1, "landmark 0 must appear exactly once"
+        # The winning 2D point must come from kp index 1 (the exact/better descriptor)
+        assert matches_lm0[0][1] == 1
+
     def test_output_shapes_consistent(self, empty_map):
         descs, _ = self._populate(empty_map, n=5)
         kp = np.array([[float(i * 10), float(i * 10)] for i in range(5)])

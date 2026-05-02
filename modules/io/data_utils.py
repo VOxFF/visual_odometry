@@ -92,7 +92,7 @@ def read_ground_truth_transforms(gt_file_path, skip=1):
     print(f"Read {len(transforms)} ground truth transformation matrices from {gt_file_path} (using skip={skip}).")
     return transforms
 
-def match_ground_truth_positions(computed_positions, image_list_path, gt_file_path, tolerance=0.05):
+def match_ground_truth_positions(computed_positions, image_list_path, gt_file_path, tolerance=0.05, start_index=0):
     """
     Matches computed global positions with ground truth positions based on timestamps.
 
@@ -124,7 +124,7 @@ def match_ground_truth_positions(computed_positions, image_list_path, gt_file_pa
     results = []
     for i, comp_pos in enumerate(computed_positions):
         try:
-            img_ts = float(df_images.iloc[i]['timestamp'])
+            img_ts = float(df_images.iloc[i + start_index]['timestamp'])
         except IndexError:
             print(f"Index {i}: No image timestamp found. Setting ground truth to None.")
             results.append((np.array(comp_pos), np.array([0, 0, 0])))

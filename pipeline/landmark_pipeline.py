@@ -27,9 +27,15 @@ class LandmarkPipeline(PipelineBase):
     def __init__(self, config: Config):
         super().__init__(config)
 
-        self.sift     = cv2.SIFT_create(nfeatures=self.cfg.max_keypoints)
-        self.map      = LandmarkMap(match_ratio=0.75, max_merge_dist_3d=0.5)
-        self.exporter = LandmarkH5Exporter()
+        self.sift      = cv2.SIFT_create(nfeatures=self.cfg.max_keypoints)
+        self.map       = LandmarkMap(match_ratio=0.75, max_merge_dist_3d=0.5)
+        self.exporter  = LandmarkH5Exporter()
+        # Erode mask by 5px so SIFT avoids the mask boundary where RAFT-Stereo
+        # disparity is unreliable (matching patch partially outside valid region).
+        sift_kernel = np.ones((11, 11), np.uint8)  # 5px erosion each side
+        self.sift_mask = cv2.erode(
+            self.stereo_mask.astype(np.uint8) * 255, sift_kernel, iterations=1
+        )
 
         K = self.cam_params.get_intrinsics()
         self.fx = float(K[0, 0])
@@ -57,21 +63,23 @@ class LandmarkPipeline(PipelineBase):
             traj_file.write("frame, translation, rotation_matrix_flat\n")
 
             for i, left_rel in enumerate(self.left_files):
+                i += self.frame_start
                 t0 = _tick()
                 img_left, img_right = self._load_stereo(left_rel)
                 if img_left is None or img_right is None:
                     continue
                 t_load += _tick() - t0
 
-                # ── Depth ──────────────────────────────────────────────
+                # ── Rectify + depth ────────────────────────────────────
                 t0 = _tick()
+                img_left_rect, img_right_rect = self.rectification.rectify_images(img_left, img_right)
                 disp  = self.disparity_solver.compute_disparity(img_left, img_right)
                 depth = self.depth_solver.compute_depth(disp)
                 t_disp += _tick() - t0
 
-                # ── SIFT keypoints ──────────────────────────────────────
+                # ── SIFT on rectified image, masked to valid stereo region
                 t0 = _tick()
-                kps, descs = self.sift.detectAndCompute(img_left, None)
+                kps, descs = self.sift.detectAndCompute(img_left_rect, self.sift_mask)
                 t_sift += _tick() - t0
 
                 if descs is None or len(kps) == 0:
@@ -96,8 +104,13 @@ class LandmarkPipeline(PipelineBase):
                     continue
 
                 # ── Match against map → PnP ─────────────────────────────
+                # Frustum cull: only search landmarks visible from the previous
+                # pose.  Keeps the search index small as the map grows, preventing
+                # false ratio-test passes against the 100K+ global landmark pool.
                 t0 = _tick()
-                pts_3d, pts_2d, lm_ids, kp_indices = self.map.get_correspondences(kp_uv, descs)
+                visible_ids = self._frustum_cull(R_prev, t_prev)
+                pts_3d, pts_2d, lm_ids, kp_indices = self.map.get_correspondences(
+                    kp_uv, descs, visible_ids=visible_ids)
                 t_match += _tick() - t0
 
                 t0 = _tick()
@@ -158,7 +171,8 @@ class LandmarkPipeline(PipelineBase):
 
         print("Trajectory computation complete. Data written to:", self.traj_txt_path)
 
-        h5_path = os.path.join(self.cfg.output_path, "landmarks.h5")
+        ts      = os.path.splitext(os.path.basename(self.traj_txt_path))[0].split("_", 2)[2]
+        h5_path = os.path.join(self.cfg.output_path, f"landmarks_{ts}.h5")
         self.exporter.write(h5_path)
 
     # ------------------------------------------------------------------
@@ -232,3 +246,24 @@ class LandmarkPipeline(PipelineBase):
                 self.map.add(xyz_world, cov, descs[idx], frame_idx)
                 new_xyzs.append(xyz_world)
         return new_xyzs
+
+    def _frustum_cull(self, R_world_to_cam: np.ndarray, t_world_to_cam: np.ndarray,
+                      margin: int = 50) -> list:
+        """
+        Return ids of landmarks that project into the current frame.
+
+        Uses the previous frame's pose as a prediction (small-motion assumption).
+        A small pixel margin keeps landmarks just outside the border — they may
+        re-enter next frame and descriptor matching still works at the edge.
+        """
+        H, W = self.sift_mask.shape
+        visible = []
+        for lm_id, lm in self.map.landmarks.items():
+            x_cam = R_world_to_cam @ lm.xyz_world + t_world_to_cam
+            if x_cam[2] <= 0:           # behind the camera
+                continue
+            u = self.fx * x_cam[0] / x_cam[2] + self.cx
+            v = self.fy * x_cam[1] / x_cam[2] + self.cy
+            if -margin <= u < W + margin and -margin <= v < H + margin:
+                visible.append(lm_id)
+        return visible

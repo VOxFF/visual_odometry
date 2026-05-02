@@ -9,7 +9,7 @@ class Config:
     yaml_file: str
     output_path: str
     stereo_checkpoint: str
-    flow_checkpoint: str
+    flow_checkpoint: str = ''
 
     # Pipeline selection
     pipeline: str = 'flow'          # 'flow' | 'landmark'
@@ -18,7 +18,8 @@ class Config:
     compute_trajectory: bool = True
     render_images: bool = True
     compose_movie: bool = True
-    limit: int = 0              # 0 = no limit
+    start_frame: int = 0       # skip this many frames at the start
+    limit: int = 0              # 0 = no limit (applied after start_frame)
 
     # Depth filtering
     min_depth: float = 0.0
@@ -56,12 +57,13 @@ class Config:
             yaml_file=paths['yaml_file'],
             output_path=paths['output_path'],
             stereo_checkpoint=paths['stereo_checkpoint'],
-            flow_checkpoint=paths['flow_checkpoint'],
+            flow_checkpoint=paths.get('flow_checkpoint', ''),
 
             pipeline=run.get('pipeline', 'flow'),
             compute_trajectory=run.get('compute_trajectory', True),
             render_images=run.get('render_images', True),
             compose_movie=run.get('compose_movie', True),
+            start_frame=run.get('start_frame', 0),
             limit=run.get('limit', 0),
 
             min_depth=params.get('min_depth', 0.0),

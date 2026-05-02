@@ -117,7 +117,8 @@ class LandmarkMap:
 
     def get_correspondences(self,
                             keypoints_2d: np.ndarray,
-                            descriptors: np.ndarray
+                            descriptors: np.ndarray,
+                            visible_ids: Optional[list] = None,
                             ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Match new-frame descriptors against the landmark map.
@@ -128,6 +129,12 @@ class LandmarkMap:
         Args:
             keypoints_2d: (N, 2) pixel coordinates in the new frame.
             descriptors:  (N, 128) SIFT descriptors.
+            visible_ids:  Optional list of landmark ids to match against.
+                          When provided (frustum culling), only these landmarks
+                          are included in the search index.  This keeps the index
+                          small even as the global map grows, reducing false
+                          ratio-test passes and improving RANSAC inlier ratio.
+                          When None the full map is searched.
 
         Returns:
             pts_3d     : (M, 3) matched landmark world positions
@@ -135,16 +142,30 @@ class LandmarkMap:
             lm_ids     : (M,)   landmark ids (for subsequent merge calls)
             kp_indices : (M,)   which query keypoint each match came from
         """
-        if self.size < 2 or len(descriptors) == 0:
-            # Need ≥ 2 landmarks for knnMatch k=2 ratio test
+        if len(descriptors) == 0:
             empty = np.empty((0,), dtype=int)
             return np.empty((0, 3)), np.empty((0, 2)), empty, empty
 
-        train, index_ids = self._get_matrix()
+        if visible_ids is not None:
+            # Build a temporary matrix from the culled subset only.
+            # Avoids searching the full (potentially 100K+) map and prevents
+            # the ratio test from passing on geometrically impossible matches.
+            index_ids = [lid for lid in visible_ids if lid in self._lm_to_desc]
+            if len(index_ids) < 2:
+                empty = np.empty((0,), dtype=int)
+                return np.empty((0, 3)), np.empty((0, 2)), empty, empty
+            train = np.array([self._lm_to_desc[lid] for lid in index_ids],
+                             dtype=np.float32)
+        else:
+            if self.size < 2:
+                # Need ≥ 2 landmarks for knnMatch k=2 ratio test
+                empty = np.empty((0,), dtype=int)
+                return np.empty((0, 3)), np.empty((0, 2)), empty, empty
+            train, index_ids = self._get_matrix()
         matches = self._matcher.knnMatch(descriptors.astype(np.float32), train, k=2)
 
         pts_3d, pts_2d, lm_ids, kp_indices = [], [], [], []
-        seen_lm: dict[int, float] = {}   # lm_id → best distance so far (dedup)
+        seen_lm: dict[int, tuple[int, float]] = {}  # lm_id → (output_idx, distance)
 
         for i, pair in enumerate(matches):
             if len(pair) < 2:
@@ -157,16 +178,21 @@ class LandmarkMap:
 
             lm_id = index_ids[m.trainIdx]
 
-            # Deduplicate: if two query keypoints match the same landmark,
-            # keep only the one with the smaller descriptor distance
-            if lm_id in seen_lm and seen_lm[lm_id] <= m.distance:
-                continue
-            seen_lm[lm_id] = m.distance
-
-            pts_3d.append(self.landmarks[lm_id].xyz_world)
-            pts_2d.append(keypoints_2d[i])
-            lm_ids.append(lm_id)
-            kp_indices.append(i)
+            if lm_id in seen_lm:
+                existing_idx, existing_dist = seen_lm[lm_id]
+                if existing_dist <= m.distance:
+                    continue
+                # Better match for same landmark: replace in-place (no duplicate row)
+                pts_2d[existing_idx]     = keypoints_2d[i]
+                kp_indices[existing_idx] = i
+                seen_lm[lm_id]           = (existing_idx, m.distance)
+            else:
+                out_idx = len(pts_3d)
+                pts_3d.append(self.landmarks[lm_id].xyz_world)
+                pts_2d.append(keypoints_2d[i])
+                lm_ids.append(lm_id)
+                kp_indices.append(i)
+                seen_lm[lm_id] = (out_idx, m.distance)
 
         if not pts_3d:
             empty = np.empty((0,), dtype=int)

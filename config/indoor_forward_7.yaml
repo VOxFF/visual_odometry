@@ -10,7 +10,8 @@ run:
   compute_trajectory: true
   render_images:      true
   compose_movie:      true
-  limit:              0           # 0 = full sequence
+  start_frame:        750         # skip stationary pre-flight frames
+  limit:              800         # frames to process after start_frame
 
 parameters:
   min_depth:      0.0
