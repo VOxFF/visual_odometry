@@ -1,0 +1,30 @@
+paths:
+  dataset_path:       /home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/
+  yaml_file:          /home/roman/Downloads/fpv_datasets/indoor_forward_calib_snapdragon/indoor_forward_calib_snapdragon_imu.yaml
+  output_path:        /home/roman/Downloads/fpv_datasets/indoor_forward_7_snapdragon_with_gt/run_v1/
+  stereo_checkpoint:  models/raft-stereo/raftstereo-sceneflow.pth
+  flow_checkpoint:    models/rart-flow/raft-things.pth
+
+run:
+  pipeline:           flow_landmark
+  compute_trajectory: true
+  render_images:      true
+  compose_movie:      true
+  start_frame:        900
+  limit:              800
+
+parameters:
+  min_depth:      0.5
+  max_depth:      7.0
+  max_keypoints:        200
+  dz_threshold:         1.0
+  keypoints_detector:   shi_tomasi
+  raft_iters:               16
+  raft_disparity_warmstart: false
+  raft_optflow_warmstart:   false
+  subpixel_keypoints:       false
+
+plot:
+  elevation:      90.0
+  azimuth:        0.0
+  zoom_distance:  5.0

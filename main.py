@@ -12,6 +12,9 @@ def main():
     if config.pipeline == 'landmark':
         from pipeline.landmark_pipeline import LandmarkPipeline
         pipeline = LandmarkPipeline(config)
+    elif config.pipeline == 'flow_landmark':
+        from pipeline.flow_landmark_pipeline import FlowLandmarkPipeline
+        pipeline = FlowLandmarkPipeline(config)
     else:
         from pipeline.flow_pipeline import FlowPipeline
         pipeline = FlowPipeline(config)
